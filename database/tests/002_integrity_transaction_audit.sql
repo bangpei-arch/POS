@@ -309,7 +309,7 @@ BEGIN
   v_gap_paid_mismatch := (v_payment_sum <> 100000);
 
   IF v_gap_paid_mismatch THEN
-    RAISE NOTICE 'GAP: current DDL permits PAID sale with confirmed payments IDR % below grand_total IDR 100000; enforce in transactional service or database trigger';
+    RAISE NOTICE 'GAP: current DDL permits PAID sale with confirmed payments IDR % below grand_total IDR 100000; enforce in transactional service or database trigger', v_payment_sum;
   END IF;
   IF v_gap_over_refund THEN
     RAISE NOTICE 'GAP: current DDL permits cumulative refund quantity/value above original sale line; enforce atomically in refund service or database trigger';
