@@ -1,10 +1,10 @@
 # Desain Database PostgreSQL POS
 **Repository:** bangpei-arch/POS  
 **Dokumen:** Desain database logis dan arsitektur penyimpanan  
-**Versi:** 0.1 (draft desain)  
+**Versi:** 0.2 (audit desain dan implementasi lokal)  
 **Tanggal:** 30 Oktober 2026  
 **Acuan:** `doc/SPECIFIKASI-FUNGSIONAL-POS.md` versi 8.0  
-**Status:** Draft untuk ditinjau sebelum dibuatkan migration SQL.
+**Status:** Desain database server toko telah memiliki baseline SQL dan test CI; belum dinyatakan production-ready. Desain cloud dipisahkan.
 
 ---
 
@@ -36,7 +36,7 @@ Dokumen ini belum berupa SQL migration final. Nama tabel dan kolom merupakan ran
 
 ### 2.2 Model database
 
-Central dan local server menggunakan struktur schema yang sama sejauh memungkinkan, tetapi isi datanya berbeda:
+Central dan local server memiliki database dan migration yang terpisah. Komponen domain dapat berbagi kontrak, tetapi struktur tabel, indeks, constraint, dan hak akses ditentukan sesuai kepemilikan data. Isi datanya berbeda:
 
 - Central menyimpan data seluruh toko.
 - Local server menyimpan data satu toko, master data cache yang diperlukan, dan transaksi toko tersebut.
@@ -453,43 +453,48 @@ Dalam satu transaksi:
 - Migration harus versioned dan diuji di development/staging sebelum production.
 - Local server harus dapat berjalan tanpa koneksi central.
 
-## 23. Hal yang perlu diputuskan/diuji sebelum SQL migration final
+## 23. Hal yang masih memerlukan keputusan/uji teknis
 
-Ini bukan pertanyaan untuk mengulang spesifikasi, tetapi daftar pekerjaan desain yang masih membutuhkan uji teknis:
+Spesifikasi fungsional yang telah disepakati tidak dibuka ulang. Item di bawah adalah pekerjaan teknis yang belum selesai:
 
-1. **Promosi berkuota lintas toko saat offline:** tentukan alokasi kuota per toko atau mekanisme reservasi online. Kuota global ketat tidak dapat dijamin oleh beberapa toko yang benar-benar terputus tanpa koordinasi.
-2. **Snapshot transaksi terbuka:** spesifikasi menyatakan transaksi yang sudah dibuka memakai harga lama. Implementasi harus menetapkan kapan snapshot dibuat dan bagaimana transaksi yang dibuka sangat lama menangani produk yang kemudian dinonaktifkan. Rekomendasi: snapshot saat produk masuk keranjang dan validasi status produk saat finalisasi; perubahan harga tidak mengubah baris yang ada.
-3. **Kas per terminal dan sesi per kasir:** buat uji rekonsiliasi untuk pembukaan, penjualan tunai, cash in/out, handover, setoran, dan penutupan agar modal tidak dihitung dua kali.
-4. **Pembayaran non-tunai pending:** definisikan state transition dan siapa yang dapat memutuskan hasil akhir.
-5. **Nomor struk:** uji dua terminal, pergantian tanggal bisnis, jam terminal salah, dan restart ketika sequence dialokasikan.
-6. **Refund parsial bersamaan:** uji dua Supervisor memproses refund pada item yang sama secara bersamaan.
-7. **Pajak dan pembulatan:** buat test vector untuk tarif campuran, diskon produk, diskon transaksi, split payment, dan pembulatan Rp100.
-8. **Sinkronisasi dari terminal ke local server:** uji transaksi saat local server mati lalu hidup kembali, termasuk duplicate delivery dan terminal rusak.
-9. **Hak akses:** finalisasi matriks permission per endpoint dan per aksi sebelum implementasi.
-10. **Retensi dan partisi:** validasi strategi partisi PostgreSQL dan kebutuhan laporan historis sebelum tabel dibuat besar.
+1. **Promosi berkuota lintas toko saat offline:** kuota global ketat memerlukan alokasi per toko atau reservasi online. Tanpa koordinasi, toko offline tidak dapat menjamin kuota global.
+2. **Snapshot cart:** implementasi harus membuat snapshot harga/pajak ketika item masuk cart sesuai aturan transaksi terbuka; perubahan master baru tidak mengubah snapshot yang sudah ada.
+3. **Rekonsiliasi kas:** test lintas skenario pembukaan, penjualan tunai, cash in/out, handover, setoran, penutupan, dan variance.
+4. **Pembayaran non-tunai pending:** state transition dan otorisasi keputusan akhir perlu dituangkan dalam matriks permission dan test.
+5. **Nomor struk:** uji multi-terminal, pergantian tanggal bisnis, jam terminal salah, dan restart sequence.
+6. **Pajak/pembulatan:** test vector tarif campuran, diskon, split payment, dan pembulatan.
+7. **Sinkronisasi terminal–toko–cloud:** test integrasi saat local server/LAN mati, terminal recovery, duplicate delivery, dan cloud outage.
+8. **Hak akses:** finalisasi matriks permission per endpoint dan aksi.
+9. **Retensi/partisi:** validasi ukuran aktual dan kebutuhan laporan sebelum partisi historis diterapkan.
 
 ## 24. Tahapan implementasi database
 
-1. Review desain logis dan daftar keputusan teknis di bagian 23.
-2. Buat ERD rinci dan data dictionary final.
-3. Buat SQL migration awal untuk organisasi, pengguna, master data, transaksi, pembayaran, dan kas.
-4. Tambahkan outbox/inbox dan audit.
-5. Tambahkan indeks, constraint, serta seed data role/payment methods.
-6. Buat test otomatis untuk constraint dan alur transaksi.
-7. Uji deployment database di Docker pada development.
-8. Setelah migration stabil, dokumentasikan kontrak API.
+Tahapan baseline lokal telah berjalan:
+1. Baseline schema 001 dibuat.
+2. Integrity guards 002 dibuat dan diuji.
+3. Transaction finality/refund settlement guards 003 dibuat dan diuji di CI.
+4. Test 001–005 dan concurrency refund dimasukkan ke GitHub Actions.
 
-**Status dokumen:** Draft desain database logis. Belum ada tabel atau migration SQL yang diterapkan ke server. Jangan mulai coding fitur sebelum desain logis, khususnya alur kas, pembayaran pending, dan sinkronisasi offline, disepakati dan diuji.
+Tahapan berikutnya:
+5. Terapkan migration 003 pada database development lokal dan jalankan ulang test 001–005.
+6. Selesaikan audit outbox/inbox recovery (lease, retry, ordering, atomic ACK).
+7. Selesaikan test integrasi terminal–local server–cloud.
+8. Finalisasi desain cloud dan migration cloud terpisah.
+9. Uji restore backup dan pemulihan node.
+10. Baru setelah itu tetapkan baseline database siap untuk implementasi aplikasi.
 
+**Catatan:** migration lokal tidak boleh diterapkan ke cloud. Lihat `doc/DATABASE-BOUNDARIES-LOCAL-CLOUD.md`.
 
 ## 25. Dokumen turunan dan status pekerjaan
 
-Dokumen turunan yang telah dibuat:
-- `doc/ERD-DATA-DICTIONARY.md`: ERD per domain dan data dictionary.
-- `database/migrations/001_initial_schema.sql`: baseline DDL PostgreSQL awal.
+- `doc/ERD-DATA-DICTIONARY.md`: ERD domain ditambah ERD tabel pendukung; data dictionary melengkapi empat tabel yang sebelumnya tertinggal.
+- `database/migrations/001_initial_schema.sql`: baseline schema server toko.
+- `database/migrations/002_integrity_guards.sql`: pembayaran dan batas kumulatif refund.
+- `database/migrations/003_transaction_finality.sql`: finality penjualan/refund, rekonsiliasi settlement refund, dan indeks query tambahan.
+- `database/tests/001_schema_smoke.sql` sampai `005_transaction_finality.sql`: smoke, audit, regression, dan finality.
+- `database/tests/004_refund_concurrency.py`: uji dua proses refund bersamaan.
+- `doc/DATABASE-BOUNDARIES-LOCAL-CLOUD.md`: batas kepemilikan data server toko dan cloud.
 
-Status:
-- ERD dan data dictionary: draft 0.1 tersedia.
-- Migration awal: tersedia sebagai baseline, belum dijalankan pada instance PostgreSQL.
-- Belum dilakukan uji integrasi, concurrency, restore, atau pengujian migration dari database kosong.
-- Sebelum production, migration harus dijalankan pada PostgreSQL development/staging dan diperiksa dengan test otomatis.
+**Status test CI:** migration 001–003, test 001–005, dan concurrency test lulus pada GitHub Actions run 41139337931. Ini membuktikan test database otomatis pada PostgreSQL 16; belum membuktikan deployment pada database lokal pengguna, integrasi API inventory, atau pemulihan terminal offline.
+
+**Status lokal pengguna:** test 001–004 pernah lulus pada database development sebelum migration 003. Migration 003 belum boleh dianggap telah diterapkan pada database lokal sampai perintah penerapan dan hasil test lokal dikonfirmasi.
