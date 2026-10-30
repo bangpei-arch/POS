@@ -44,17 +44,17 @@ def setup():
             """, ("CONCUR-" + uuid.uuid4().hex, ids["store"], ids["terminal"], ids["user"]))
             ids["sale"] = cur.fetchone()[0]
             cur.execute("""
-                INSERT INTO pos_payments(sale_id,payment_method_id,amount,status,confirmed_at)
-                VALUES (%s,%s,100000,'confirmed',now())
-            """, (ids["sale"], ids["cash"]))
-            cur.execute("UPDATE pos_sales SET status='paid', paid_at=now() WHERE id=%s", (ids["sale"],))
-            cur.execute("""
                 INSERT INTO pos_sale_lines(sale_id,product_id,sku_snapshot,name_snapshot,quantity,
                                            unit_price,gross_amount,taxable_base,line_total)
                 VALUES (%s,%s,'CONCUR','Concurrency Product',1,100000,100000,100000,100000)
                 RETURNING id
             """, (ids["sale"], ids["product"]))
             ids["line"] = cur.fetchone()[0]
+            cur.execute("""
+                INSERT INTO pos_payments(sale_id,payment_method_id,amount,status,confirmed_at)
+                VALUES (%s,%s,100000,'confirmed',now())
+            """, (ids["sale"], ids["cash"]))
+            cur.execute("UPDATE pos_sales SET status='paid', paid_at=now() WHERE id=%s", (ids["sale"],))
         conn.commit()
 
 def refund_worker(label, sleep_before_commit=0):
@@ -65,13 +65,14 @@ def refund_worker(label, sleep_before_commit=0):
                 cur.execute("""
                     INSERT INTO pos_refunds(original_sale_id,store_id,terminal_id,processed_by,
                                             refund_method_id,reason,total_amount,status,completed_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,100000,'paid',now()) RETURNING id
+                    VALUES (%s,%s,%s,%s,%s,%s,100000,'approved',NULL) RETURNING id
                 """, (ids["sale"], ids["store"], ids["terminal"], ids["user"], ids["cash"], label))
                 refund_id = cur.fetchone()[0]
                 cur.execute("""
                     INSERT INTO pos_refund_lines(refund_id,original_sale_line_id,quantity,refund_amount)
                     VALUES (%s,%s,1,100000)
                 """, (refund_id, ids["line"]))
+                cur.execute("UPDATE pos_refunds SET status='paid', completed_at=now() WHERE id=%s", (refund_id,))
                 if label == "first":
                     ready.set()
                     time.sleep(sleep_before_commit)
