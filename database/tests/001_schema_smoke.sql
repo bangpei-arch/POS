@@ -46,16 +46,6 @@ BEGIN
   EXCEPTION WHEN foreign_key_violation THEN NULL;
   END;
 
-  -- Check constraints must reject invalid quantities.
-  BEGIN
-    INSERT INTO md_products(sku, name, base_uom_code)
-    VALUES ('TST-INVALID', 'Invalid Product', 'PCS');
-    INSERT INTO pos_carts(store_id, terminal_id, created_by)
-    VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid());
-    RAISE EXCEPTION 'Invalid foreign keys unexpectedly accepted';
-  EXCEPTION WHEN foreign_key_violation THEN NULL;
-  END;
-
   INSERT INTO org_stores(code, name) VALUES ('TST', 'Test Store')
   RETURNING id INTO v_store;
   INSERT INTO iam_users(employee_code, full_name, pin_hash)
@@ -67,6 +57,14 @@ BEGIN
   INSERT INTO md_products(sku, name, base_uom_code)
   VALUES ('TST-001', 'Test Product', 'PCS')
   RETURNING id INTO v_product;
+
+  -- Check constraints must reject a negative product price.
+  BEGIN
+    INSERT INTO md_product_prices(product_id, price, valid_from, version)
+    VALUES (v_product, -1, now(), 999);
+    RAISE EXCEPTION 'Negative product price unexpectedly accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
   INSERT INTO md_customers(name, is_walk_in)
   VALUES ('Umum', true)
   RETURNING id INTO v_customer;
