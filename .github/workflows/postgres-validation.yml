@@ -34,12 +34,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install concurrency test dependency
+        run: python -m pip install 'psycopg[binary]'
+
       - name: Run initial migration on empty database
         env:
           PGPASSWORD: pos_test_password
         run: |
           psql -h localhost -p 5432 -U pos_test -d pos_test \
             -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql
+
+      - name: Run integrity guard migration
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/migrations/002_integrity_guards.sql
 
       - name: Run schema and workflow smoke tests
         env:
@@ -54,3 +64,15 @@ jobs:
         run: |
           psql -h localhost -p 5432 -U pos_test -d pos_test \
             -v ON_ERROR_STOP=1 -f database/tests/002_integrity_transaction_audit.sql
+
+      - name: Run integrity guard regression tests
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/tests/003_integrity_guards.sql
+
+      - name: Run concurrent refund test
+        env:
+          POS_TEST_DSN: postgresql://pos_test:pos_test_password@localhost:5432/pos_test
+        run: python database/tests/004_refund_concurrency.py
