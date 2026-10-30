@@ -165,12 +165,13 @@ BEGIN
     refund_method_id, reason, total_amount, status
   ) VALUES (
     v_sale, v_store, v_terminal, v_user, v_refund_method,
-    'Smoke test refund', 50000, 'paid'
+    'Smoke test refund', 50000, 'approved'
   ) RETURNING id INTO v_refund;
   INSERT INTO pos_refund_lines(
     refund_id, original_sale_line_id, quantity, refund_amount,
     item_received, item_resalable
   ) VALUES (v_refund, v_sale_line, 1, 50000, true, true);
+  UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund;
 
   IF NOT EXISTS (
     SELECT 1 FROM pos_refund_lines
