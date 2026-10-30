@@ -114,6 +114,20 @@ erDiagram
     varchar code PK
     varchar name
   }
+  SYNC_MASTER_VERSIONS {
+    uuid id PK
+    varchar entity_type
+    uuid entity_id
+    bigint version
+  }
+  SYNC_INVENTORY_EVENTS {
+    uuid id PK
+    varchar source_type
+    uuid source_id
+    varchar event_type
+    jsonb payload
+    varchar idempotency_key
+  }
   MD_CUSTOMERS ||--o{ MD_CUSTOMER_PHONE_ALIASES : phone_alias
   POS_CARTS ||--o{ POS_CART_EVENTS : event_history
   IAM_USERS ||--o{ POS_CART_EVENTS : event_actor
