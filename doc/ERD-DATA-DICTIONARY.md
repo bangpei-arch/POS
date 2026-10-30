@@ -1,7 +1,7 @@
 # ERD Rinci dan Data Dictionary POS
-**Versi:** 0.1  
+**Versi:** 0.2  
 **Acuan:** Spesifikasi Fungsional POS v8.0 dan Desain Database PostgreSQL v0.1  
-**Status:** Draft teknis sebelum migration produksi
+**Status:** Audit dokumentasi schema server toko; belum production-certified
 
 ## 1. Konvensi
 
@@ -574,6 +574,9 @@ Aturan ini tidak cukup dijamin dengan satu CHECK constraint:
 7. Perubahan master pusat tidak boleh mengubah snapshot transaksi.
 8. Event inbox diproses idempotent dan acknowledgement hanya setelah hasil tersimpan.
 9. Cart/Hold Order yang dibuat terminal ketika offline harus dapat direkonsiliasi ketika local server pulih.
+10. Sale berstatus PAID dan seluruh detail finansialnya immutable; koreksi melalui refund/reversal.
+11. Refund hanya dapat menjadi PAID jika memiliki detail dan total detail sama dengan header; jika payout breakdown digunakan, jumlah payout confirmed harus sama dengan header.
+12. Refund berstatus PAID dan detailnya immutable.
 
 ## 5. Perbedaan data central dan local
 
@@ -592,4 +595,7 @@ Aturan ini tidak cukup dijamin dengan satu CHECK constraint:
 
 - ERD Mermaid bagian 2.1–2.4 adalah ERD domain; bagian 2.5 melengkapi tabel pendukung dan relasi FK dari migration 001. Relasi polimorfik dan referensi tanpa FK langsung dijelaskan terpisah.
 - Field JSONB digunakan untuk payload konfigurasi/promosi/event, bukan menggantikan kolom relasional yang dipakai untuk filter, join, constraint, atau laporan.
-- Migration awal berikutnya adalah baseline schema. Setelah diuji pada PostgreSQL target, buat migration lanjutan untuk trigger, exclusion constraint rentang tanggal, row-level security bila dipilih, dan partisi historis.
+- Migration 001–003 merupakan baseline bertahap untuk database server toko. Migration 003 menambahkan finality transaksi/refund dan indeks query tambahan.
+- Audit dokumentasi per 31 Oktober 2026: seluruh 72 tabel SQL telah tercantum dalam data dictionary dan ERD (termasuk entitas polimorfik tanpa FK langsung).
+- Migration dan test telah lulus di GitHub Actions PostgreSQL 16; deployment lokal pengguna tetap harus dikonfirmasi terpisah.
+- Exclusion constraint rentang tanggal, row-level security bila dipilih, dan partisi historis masih menjadi pekerjaan lanjutan; jangan dianggap sudah diterapkan.
