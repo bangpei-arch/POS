@@ -216,7 +216,8 @@ Kolom inti di bawah adalah kontrak logis. Migration awal dapat menambah kolom op
 | | reason | text | YES | Alasan sementara tidak tersedia |
 | md_customers | id | uuid | NO | PK |
 | | name | varchar(160) | NO | Nama pelanggan |
-| | normalized_phone | varchar(30) | NO | Nomor ternormalisasi |
+| | normalized_phone | varchar(30) | YES | Nomor ternormalisasi; wajib untuk pelanggan terdaftar |
+| | is_walk_in | boolean | NO | TRUE khusus pelanggan sistem “Umum” |
 | | address | text | YES | Alamat |
 | | date_of_birth | date | YES | Tanggal lahir |
 | | status | varchar(20) | NO | active/inactive |
