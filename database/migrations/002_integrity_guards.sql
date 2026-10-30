@@ -21,6 +21,7 @@ DECLARE
   v_exclude_payment_id uuid;
 BEGIN
   v_exclude_payment_id := NULL;
+  v_exclude_payment_id := NULL;
   IF TG_OP = 'INSERT' THEN
     v_ids := ARRAY[NEW.sale_id];
   ELSIF TG_OP = 'DELETE' THEN
@@ -89,6 +90,7 @@ SET search_path = pos, public
 AS $$
 DECLARE
   v_confirmed_total numeric(18,2);
+  v_exclude_payment_id uuid;
 BEGIN
   IF NEW.status = 'paid' THEN
     SELECT COALESCE(sum(amount), 0)
@@ -131,13 +133,18 @@ DECLARE
   v_exclude_refund_line_id uuid;
 BEGIN
   v_exclude_refund_line_id := NULL;
+  v_exclude_refund_line_id := NULL;
   IF TG_OP = 'DELETE' THEN
     v_line_id := OLD.original_sale_line_id;
+    v_exclude_refund_line_id := OLD.id;
     v_exclude_refund_line_id := OLD.id;
     v_refund_id := OLD.refund_id;
   ELSE
     v_line_id := NEW.original_sale_line_id;
     v_refund_id := NEW.refund_id;
+    IF TG_OP = 'UPDATE' THEN
+      v_exclude_refund_line_id := OLD.id;
+    END IF;
     IF TG_OP = 'UPDATE' THEN
       v_exclude_refund_line_id := OLD.id;
     END IF;
