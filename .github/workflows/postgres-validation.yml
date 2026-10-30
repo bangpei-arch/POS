@@ -51,6 +51,13 @@ jobs:
           psql -h localhost -p 5432 -U pos_test -d pos_test \
             -v ON_ERROR_STOP=1 -f database/migrations/002_integrity_guards.sql
 
+      - name: Run transaction finality migration
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/migrations/003_transaction_finality.sql
+
       - name: Run schema and workflow smoke tests
         env:
           PGPASSWORD: pos_test_password
@@ -71,6 +78,13 @@ jobs:
         run: |
           psql -h localhost -p 5432 -U pos_test -d pos_test \
             -v ON_ERROR_STOP=1 -f database/tests/003_integrity_guards.sql
+
+      - name: Run transaction finality regression tests
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/tests/005_transaction_finality.sql
 
       - name: Run concurrent refund test
         env:
