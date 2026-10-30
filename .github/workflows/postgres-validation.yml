@@ -47,3 +47,10 @@ jobs:
         run: |
           psql -h localhost -p 5432 -U pos_test -d pos_test \
             -v ON_ERROR_STOP=1 -f database/tests/001_schema_smoke.sql
+
+      - name: Run integrity and transaction audit tests
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/tests/002_integrity_transaction_audit.sql
