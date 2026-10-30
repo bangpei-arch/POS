@@ -200,13 +200,16 @@ CREATE TABLE md_uoms (
 CREATE TABLE md_customers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name varchar(160) NOT NULL,
-  normalized_phone varchar(30) NOT NULL UNIQUE,
+  normalized_phone varchar(30),
+  is_walk_in boolean NOT NULL DEFAULT false,
   address text,
   date_of_birth date,
   status varchar(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive')),
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((is_walk_in AND normalized_phone IS NULL) OR (NOT is_walk_in AND normalized_phone IS NOT NULL))
 );
+CREATE UNIQUE INDEX uq_customer_normalized_phone ON md_customers(normalized_phone) WHERE normalized_phone IS NOT NULL;
 CREATE TABLE md_customer_merge_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_customer_id uuid NOT NULL REFERENCES md_customers(id),
