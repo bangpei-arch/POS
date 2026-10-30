@@ -18,13 +18,17 @@ DECLARE
   v_status varchar(20);
   v_grand_total numeric(18,2);
   v_confirmed_total numeric(18,2);
+  v_exclude_payment_id uuid;
 BEGIN
+  v_exclude_payment_id := NULL;
   IF TG_OP = 'INSERT' THEN
     v_ids := ARRAY[NEW.sale_id];
   ELSIF TG_OP = 'DELETE' THEN
     v_ids := ARRAY[OLD.sale_id];
+    v_exclude_payment_id := OLD.id;
   ELSE
     v_ids := ARRAY[OLD.sale_id, NEW.sale_id];
+    v_exclude_payment_id := OLD.id;
   END IF;
 
   -- Lock affected sale rows in deterministic order. This serializes payment
@@ -50,8 +54,7 @@ BEGIN
     FROM pos_payments
     WHERE sale_id = v_sale_id
       AND status = 'confirmed'
-      AND (TG_OP <> 'UPDATE' OR id <> OLD.id)
-      AND (TG_OP <> 'DELETE' OR id <> OLD.id);
+      AND id IS DISTINCT FROM v_exclude_payment_id;
 
     IF TG_OP <> 'DELETE'
        AND NEW.sale_id = v_sale_id
@@ -125,13 +128,19 @@ DECLARE
   v_original_amount numeric(18,2);
   v_refunded_qty bigint;
   v_refunded_amount numeric(18,2);
+  v_exclude_refund_line_id uuid;
 BEGIN
+  v_exclude_refund_line_id := NULL;
   IF TG_OP = 'DELETE' THEN
     v_line_id := OLD.original_sale_line_id;
+    v_exclude_refund_line_id := OLD.id;
     v_refund_id := OLD.refund_id;
   ELSE
     v_line_id := NEW.original_sale_line_id;
     v_refund_id := NEW.refund_id;
+    IF TG_OP = 'UPDATE' THEN
+      v_exclude_refund_line_id := OLD.id;
+    END IF;
     IF TG_OP = 'UPDATE'
        AND (NEW.original_sale_line_id <> OLD.original_sale_line_id
             OR NEW.refund_id <> OLD.refund_id) THEN
@@ -188,7 +197,7 @@ BEGIN
     JOIN pos_refunds r ON r.id = rl.refund_id
     WHERE rl.original_sale_line_id = v_line_id
       AND r.status = 'paid'
-      AND rl.id IS DISTINCT FROM CASE WHEN TG_OP = 'UPDATE' THEN OLD.id ELSE NULL::uuid END;
+      AND rl.id IS DISTINCT FROM v_exclude_refund_line_id;
 
     v_refunded_qty := v_refunded_qty + NEW.quantity;
     v_refunded_amount := v_refunded_amount + NEW.refund_amount;
