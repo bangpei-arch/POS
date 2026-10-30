@@ -45,6 +45,14 @@ BEGIN
     'draft', 100000, 100000
   ) RETURNING id INTO v_sale;
 
+  INSERT INTO pos_sale_lines(
+    sale_id, product_id, sku_snapshot, name_snapshot, quantity,
+    unit_price, gross_amount, taxable_base, line_total
+  ) VALUES (
+    v_sale, v_product, 'GUARD03-SKU', 'Guard Product', 4,
+    25000, 100000, 100000, 100000
+  ) RETURNING id INTO v_line;
+
   INSERT INTO pos_payments(sale_id, payment_method_id, amount, status, confirmed_at)
   VALUES (v_sale, v_cash, 50000, 'confirmed', now()) RETURNING id INTO v_payment_1;
 
@@ -96,14 +104,6 @@ BEGIN
     RAISE EXCEPTION 'Changing paid-sale payment total was accepted';
   END IF;
   RAISE NOTICE 'PASS: exact split payment accepted; post-paid payment mutation rejected';
-
-  INSERT INTO pos_sale_lines(
-    sale_id, product_id, sku_snapshot, name_snapshot, quantity,
-    unit_price, gross_amount, taxable_base, line_total
-  ) VALUES (
-    v_sale, v_product, 'GUARD03-SKU', 'Guard Product', 4,
-    25000, 100000, 100000, 100000
-  ) RETURNING id INTO v_line;
 
   -- First partial refund consumes 1 of 4 units and IDR 25,000.
   INSERT INTO pos_refunds(
@@ -175,9 +175,6 @@ BEGIN
     'GUARD03-REFUND-TRANSITION', v_store, v_terminal, v_cashier,
     DATE '2026-10-31', 'draft', 50000, 50000
   ) RETURNING id INTO v_sale_2;
-  INSERT INTO pos_payments(sale_id, payment_method_id, amount, status, confirmed_at)
-  VALUES (v_sale_2, v_cash, 50000, 'confirmed', now());
-  UPDATE pos_sales SET status = 'paid', paid_at = now() WHERE id = v_sale_2;
   INSERT INTO pos_sale_lines(
     sale_id, product_id, sku_snapshot, name_snapshot, quantity,
     unit_price, gross_amount, taxable_base, line_total
@@ -185,7 +182,9 @@ BEGIN
     v_sale_2, v_product, 'GUARD03-SKU', 'Guard Product', 2,
     25000, 50000, 50000, 50000
   ) RETURNING id INTO v_line_2;
-
+  INSERT INTO pos_payments(sale_id, payment_method_id, amount, status, confirmed_at)
+  VALUES (v_sale_2, v_cash, 50000, 'confirmed', now());
+  UPDATE pos_sales SET status = 'paid', paid_at = now() WHERE id = v_sale_2;
   INSERT INTO pos_refunds(
     original_sale_id, store_id, terminal_id, processed_by,
     refund_method_id, reason, total_amount, status
