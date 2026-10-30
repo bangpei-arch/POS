@@ -147,12 +147,13 @@ BEGIN
     refund_method_id, reason, total_amount, status, completed_at
   ) VALUES (
     v_sale, v_store, v_terminal, v_supervisor, v_cash,
-    'Partial refund audit', 25000, 'paid', now()
+    'Partial refund audit', 25000, 'approved', NULL
   ) RETURNING id INTO v_refund_partial;
   INSERT INTO pos_refund_lines(
     refund_id, original_sale_line_id, quantity, refund_amount,
     item_received, item_resalable
   ) VALUES (v_refund_partial, v_line, 1, 25000, true, true);
+  UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_partial;
 
   -- Refund 2: remaining three items; physically received but not resalable.
   INSERT INTO pos_refunds(
@@ -160,12 +161,13 @@ BEGIN
     refund_method_id, reason, total_amount, status, completed_at
   ) VALUES (
     v_sale, v_store, v_terminal, v_supervisor, v_cash,
-    'Remaining quantity refund audit', 75000, 'paid', now()
+    'Remaining quantity refund audit', 75000, 'approved', NULL
   ) RETURNING id INTO v_refund_full;
   INSERT INTO pos_refund_lines(
     refund_id, original_sale_line_id, quantity, refund_amount,
     item_received, item_resalable
   ) VALUES (v_refund_full, v_line, 3, 75000, true, false);
+  UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_full;
 
   SELECT sum(quantity), sum(refund_amount)
   INTO v_refund_qty, v_refund_sum
