@@ -124,4 +124,4 @@ try:
         raise AssertionError(f"Concurrent over-refund escaped guard: qty={qty}, amount={amount}")
     print("CONCURRENCY PASS: competing refunds serialized; only one committed")
 finally:
-    cleanup()
+    pass  # Test database is ephemeral; preserve fixtures for failure diagnosis.
