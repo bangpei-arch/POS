@@ -1,0 +1,49 @@
+name: PostgreSQL migration validation
+
+on:
+  push:
+    paths:
+      - "database/migrations/**"
+      - "database/tests/**"
+      - ".github/workflows/postgres-validation.yml"
+  pull_request:
+    paths:
+      - "database/migrations/**"
+      - "database/tests/**"
+      - ".github/workflows/postgres-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  postgres-validation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pos_test
+          POSTGRES_USER: pos_test
+          POSTGRES_PASSWORD: pos_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pos_test -d pos_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run initial migration on empty database
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql
+
+      - name: Run schema and workflow smoke tests
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/tests/001_schema_smoke.sql
