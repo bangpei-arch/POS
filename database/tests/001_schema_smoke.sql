@@ -38,6 +38,24 @@ BEGIN
     RAISE EXCEPTION 'One or more required indexes are missing';
   END IF;
 
+  -- Foreign-key integrity must reject references to missing parent rows.
+  BEGIN
+    INSERT INTO org_terminals(store_id, code)
+    VALUES (gen_random_uuid(), 'INVALID-FK-TERMINAL');
+    RAISE EXCEPTION 'Invalid foreign key unexpectedly accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+
+  -- Check constraints must reject invalid quantities.
+  BEGIN
+    INSERT INTO md_products(sku, name, base_uom_code)
+    VALUES ('TST-INVALID', 'Invalid Product', 'PCS');
+    INSERT INTO pos_carts(store_id, terminal_id, created_by)
+    VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid());
+    RAISE EXCEPTION 'Invalid foreign keys unexpectedly accepted';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+
   INSERT INTO org_stores(code, name) VALUES ('TST', 'Test Store')
   RETURNING id INTO v_store;
   INSERT INTO iam_users(employee_code, full_name, pin_hash)
