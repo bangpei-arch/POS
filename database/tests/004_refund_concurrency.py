@@ -4,7 +4,7 @@
 Environment:
   POS_TEST_DSN=postgresql://pos_test:pos_test_password@localhost:5432/pos_test
 Requires psycopg 3 (pip install "psycopg[binary]").
-The fixture transaction is committed for the competing sessions and removed at end.
+Fixture rows remain in the disposable test database for diagnostics.
 """
 import os
 import threading
@@ -81,20 +81,6 @@ def refund_worker(label, sleep_before_commit=0):
         results[label] = "rejected"
     except Exception as exc:  # surfaced as test failure below
         results[label] = f"error: {type(exc).__name__}: {exc}"
-
-def cleanup():
-    with psycopg.connect(DSN) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SET search_path TO pos, public")
-            cur.execute("DELETE FROM pos_refund_lines WHERE refund_id IN (SELECT id FROM pos_refunds WHERE original_sale_id=%s)", (ids["sale"],))
-            cur.execute("DELETE FROM pos_refunds WHERE original_sale_id=%s", (ids["sale"],))
-            cur.execute("DELETE FROM pos_sale_lines WHERE sale_id=%s", (ids["sale"],))
-            cur.execute("DELETE FROM pos_sales WHERE id=%s", (ids["sale"],))
-            cur.execute("DELETE FROM md_products WHERE id=%s", (ids["product"],))
-            cur.execute("DELETE FROM org_terminals WHERE id=%s", (ids["terminal"],))
-            cur.execute("DELETE FROM iam_users WHERE id=%s", (ids["user"],))
-            cur.execute("DELETE FROM org_stores WHERE id=%s", (ids["store"],))
-        conn.commit()
 
 setup()
 try:
