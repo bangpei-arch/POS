@@ -111,10 +111,11 @@ BEGIN
     refund_method_id, reason, total_amount, status, completed_at
   ) VALUES (
     v_sale, v_store, v_terminal, v_supervisor, v_cash,
-    'Guard partial refund', 25000, 'paid', now()
+    'Guard partial refund', 25000, 'approved', NULL
   ) RETURNING id INTO v_refund_1;
   INSERT INTO pos_refund_lines(refund_id, original_sale_line_id, quantity, refund_amount)
   VALUES (v_refund_1, v_line, 1, 25000);
+  UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_1;
 
   -- Old GAP scenario 1: quantity over original quantity must fail.
   INSERT INTO pos_refunds(
@@ -122,12 +123,13 @@ BEGIN
     refund_method_id, reason, total_amount, status, completed_at
   ) VALUES (
     v_sale, v_store, v_terminal, v_supervisor, v_cash,
-    'Attempt quantity over-refund', 100000, 'paid', now()
+    'Attempt quantity over-refund', 100000, 'approved', NULL
   ) RETURNING id INTO v_refund_2;
   v_rejected := false;
   BEGIN
     INSERT INTO pos_refund_lines(refund_id, original_sale_line_id, quantity, refund_amount)
     VALUES (v_refund_2, v_line, 4, 100000);
+    UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_2;
   EXCEPTION WHEN check_violation THEN
     v_rejected := true;
   END;
@@ -142,12 +144,13 @@ BEGIN
     refund_method_id, reason, total_amount, status, completed_at
   ) VALUES (
     v_sale, v_store, v_terminal, v_supervisor, v_cash,
-    'Attempt amount over-refund', 75001, 'paid', now()
+    'Attempt amount over-refund', 75001, 'approved', NULL
   ) RETURNING id INTO v_refund_3;
   v_rejected := false;
   BEGIN
     INSERT INTO pos_refund_lines(refund_id, original_sale_line_id, quantity, refund_amount)
     VALUES (v_refund_3, v_line, 1, 75001);
+    UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_3;
   EXCEPTION WHEN check_violation THEN
     v_rejected := true;
   END;
@@ -162,10 +165,11 @@ BEGIN
     refund_method_id, reason, total_amount, status, completed_at
   ) VALUES (
     v_sale, v_store, v_terminal, v_supervisor, v_cash,
-    'Valid remaining refund', 75000, 'paid', now()
+    'Valid remaining refund', 75000, 'approved', NULL
   ) RETURNING id INTO v_refund_4;
   INSERT INTO pos_refund_lines(refund_id, original_sale_line_id, quantity, refund_amount)
   VALUES (v_refund_4, v_line, 3, 75000);
+  UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_4;
 
   -- A refund drafted with lines must also be checked when it becomes paid.
   INSERT INTO pos_sales(
