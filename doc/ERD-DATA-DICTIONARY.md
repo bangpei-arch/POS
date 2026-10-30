@@ -97,6 +97,61 @@ erDiagram
   ORG_TERMINALS ||--o{ OPS_ALERTS : raises
 \`\`\`
 
+### 2.5 Relasi tabel pendukung dari migration 001
+
+ERD domain pada bagian 2.1–2.4 dilengkapi dengan tabel pendukung berikut agar seluruh tabel dan relasi FK pada migration tercakup.
+
+```mermaid
+erDiagram
+  ORG_TERMINALS ||--o{ ORG_TERMINAL_STATUS : status_history
+  IAM_USERS ||--o{ IAM_PIN_RESET_EVENTS : reset_for
+  IAM_USERS ||--o{ IAM_PIN_RESET_EVENTS : reset_by
+  IAM_ROLES ||--o{ MD_MANUAL_DISCOUNT_LIMITS : discount_policy
+  IAM_USERS ||--o{ MD_MANUAL_DISCOUNT_LIMITS : supervisor_limit
+  ORG_TERMINALS ||--o{ MD_PRODUCT_DISPLAY_ORDER : product_order
+  MD_PRODUCTS ||--o{ MD_PRODUCT_DISPLAY_ORDER : displayed
+  MD_UOMS {
+    varchar code PK
+    varchar name
+  }
+  MD_CUSTOMERS ||--o{ MD_CUSTOMER_PHONE_ALIASES : phone_alias
+  POS_CARTS ||--o{ POS_CART_EVENTS : event_history
+  IAM_USERS ||--o{ POS_CART_EVENTS : event_actor
+  POS_SALES ||--o{ POS_SALE_STATUS_EVENTS : status_history
+  IAM_USERS ||--o{ POS_SALE_STATUS_EVENTS : status_actor
+  ORG_TERMINALS ||--o{ POS_SALE_NUMBER_SEQUENCES : receipt_sequence
+  POS_SALES ||--o{ POS_SALE_DISCOUNTS : discount
+  POS_SALE_LINES ||--o{ POS_SALE_DISCOUNTS : line_discount
+  IAM_USERS ||--o{ POS_SALE_DISCOUNTS : discount_actor
+  MD_PROMOTIONS ||--o{ POS_SALE_DISCOUNTS : promotion_source
+  POS_SALES ||--o{ POS_PROMOTION_CANCELLATIONS : promotion_cancel
+  MD_PROMOTIONS ||--o{ POS_PROMOTION_CANCELLATIONS : cancelled_promotion
+  IAM_USERS ||--o{ POS_PROMOTION_CANCELLATIONS : cancellation_actor
+  MD_PROMOTIONS ||--o{ MD_PROMOTION_USAGE : usage
+  MD_CUSTOMERS ||--o{ MD_PROMOTION_USAGE : customer_usage
+  POS_SALES ||--o{ MD_PROMOTION_USAGE : sale_usage
+  POS_REFUNDS ||--o{ POS_REFUND_EVENTS : refund_history
+  IAM_USERS ||--o{ POS_REFUND_EVENTS : refund_actor
+  CASH_DRAWERS ||--o{ CASH_DRAWER_FLOAT_HISTORY : float_history
+  IAM_USERS ||--o{ CASH_DRAWER_FLOAT_HISTORY : float_actor
+  CASH_SESSIONS ||--o{ CASH_SESSION_EVENTS : session_history
+  IAM_USERS ||--o{ CASH_SESSION_EVENTS : session_actor
+  SYNC_NODES ||--o{ SYNC_CHECKPOINTS : stream_checkpoint
+  SYNC_NODES ||--o{ OPS_BACKUP_RUNS : backup_history
+  POS_SALES ||--o{ OPS_PRINT_JOBS : print_job
+  ORG_TERMINALS ||--o{ OPS_PRINT_JOBS : print_terminal
+  POS_SALES ||--o{ OPS_REPRINT_EVENTS : reprint_history
+  ORG_TERMINALS ||--o{ OPS_REPRINT_EVENTS : reprint_terminal
+  IAM_USERS ||--o{ OPS_REPRINT_EVENTS : reprint_actor
+  IAM_USERS ||--o{ AUDIT_DELETION_EVENTS : audit_delete_actor
+```
+
+Catatan relasi yang bersifat polimorfik/tidak memakai FK langsung:
+- `sync_master_versions.entity_type/entity_id` menunjuk entitas master berdasarkan tipe.
+- `sync_inventory_events.source_type/source_id` menunjuk sumber transaksi berdasarkan tipe.
+- `audit_deletion_events.original_audit_event_id` menyimpan ID audit asal tanpa FK agar jejak penghapusan tetap dapat dipertahankan.
+- `md_products.base_uom_code` menyimpan kode satuan; migration 001 belum memasang FK ke `md_uoms`.
+
 ## 3. Data dictionary
 
 Kolom inti di bawah adalah kontrak logis. Migration awal dapat menambah kolom operasional tanpa mengubah makna domain.
@@ -468,6 +523,30 @@ Kolom inti di bawah adalah kontrak logis. Migration awal dapat menambah kolom op
 | | artifact_uri/checksum | text | YES | Lokasi/checksum |
 | | size_bytes | bigint | YES | Ukuran |
 
+### 3.8 Tabel pendukung yang sebelumnya belum tercantum
+
+| Tabel | Kolom | Tipe | Null? | Keterangan |
+|---|---|---|---|---|
+| md_product_display_order | id | uuid | NO | PK |
+| | terminal_id/product_id | uuid | NO | FK terminal dan produk |
+| | sort_order | integer | NO | Urutan produk pada terminal |
+| | is_favorite | boolean | NO | Penanda produk favorit |
+| md_uoms | code | varchar(20) | NO | PK kode satuan |
+| | name | varchar(80) | NO | Nama satuan |
+| | description | text | YES | Keterangan satuan |
+| md_manual_discount_limits | id | uuid | NO | PK |
+| | role_id | uuid | YES | FK role; salah satu role atau supervisor wajib diisi |
+| | supervisor_user_id | uuid | YES | FK supervisor tertentu |
+| | max_percent | numeric(7,4) | NO | Batas diskon persentase |
+| | max_amount | numeric(18,2) | NO | Batas diskon nominal |
+| | valid_from/valid_until | timestamptz | NO/YES | Masa berlaku batas diskon |
+| pos_refund_events | id | uuid | NO | PK |
+| | refund_id | uuid | NO | FK refund |
+| | event_type | varchar(40) | NO | Jenis peristiwa refund |
+| | actor_id | uuid | NO | FK pengguna |
+| | reason | text | YES | Alasan perubahan |
+| | occurred_at | timestamptz | NO | Waktu peristiwa |
+
 ## 4. Aturan integritas lintas tabel
 
 Aturan ini tidak cukup dijamin dengan satu CHECK constraint:
@@ -497,6 +576,6 @@ Aturan ini tidak cukup dijamin dengan satu CHECK constraint:
 
 ## 6. Catatan implementasi
 
-- ERD Mermaid di atas adalah ERD domain. Relasi opsional, composite key, dan beberapa FK yang bergantung pada urutan migration tetap perlu ditambahkan pada DDL.
+- ERD Mermaid bagian 2.1–2.4 adalah ERD domain; bagian 2.5 melengkapi tabel pendukung dan relasi FK dari migration 001. Relasi polimorfik dan referensi tanpa FK langsung dijelaskan terpisah.
 - Field JSONB digunakan untuk payload konfigurasi/promosi/event, bukan menggantikan kolom relasional yang dipakai untuk filter, join, constraint, atau laporan.
 - Migration awal berikutnya adalah baseline schema. Setelah diuji pada PostgreSQL target, buat migration lanjutan untuk trigger, exclusion constraint rentang tanggal, row-level security bila dipilih, dan partisi historis.
