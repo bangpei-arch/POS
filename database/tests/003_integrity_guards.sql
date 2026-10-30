@@ -208,7 +208,8 @@ BEGIN
 
   v_rejected := false;
   BEGIN
-    UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_b;
+    UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_a;
+  UPDATE pos_refunds SET status = 'paid', completed_at = now() WHERE id = v_refund_b;
   EXCEPTION WHEN check_violation THEN
     v_rejected := true;
   END;
