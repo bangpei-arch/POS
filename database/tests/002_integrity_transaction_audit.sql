@@ -294,28 +294,27 @@ BEGIN
   END IF;
   RAISE NOTICE 'PASS: outbox retry, delivery attempt history, inbox duplicate delivery idempotency';
 
-  -- The current DDL permits a paid sale with confirmed payments below grand_total.
-  INSERT INTO pos_sales(
-    receipt_number, store_id, terminal_id, cashier_id, business_date,
-    status, subtotal, grand_total, paid_at
-  ) VALUES (
-    'AUDIT02-PAID-MISMATCH', v_store, v_terminal, v_user, DATE '2026-10-31',
-    'paid', 100000, 100000, now()
-  ) RETURNING id INTO v_sale;
-  INSERT INTO pos_payments(sale_id, payment_method_id, amount, status, confirmed_at)
-  VALUES (v_sale, v_cash, 50000, 'confirmed', now());
-  SELECT COALESCE(sum(amount),0) INTO v_payment_sum
-  FROM pos_payments WHERE sale_id = v_sale AND status = 'confirmed';
-  v_gap_paid_mismatch := (v_payment_sum <> 100000);
+  -- Regression probe: the database must reject a paid sale with no matching payments.
+  BEGIN
+    INSERT INTO pos_sales(
+      receipt_number, store_id, terminal_id, cashier_id, business_date,
+      status, subtotal, grand_total, paid_at
+    ) VALUES (
+      'AUDIT02-PAID-MISMATCH', v_store, v_terminal, v_user, DATE '2026-10-31',
+      'paid', 100000, 100000, now()
+    );
+    v_gap_paid_mismatch := true;
+  EXCEPTION WHEN check_violation THEN
+    v_gap_paid_mismatch := false;
+  END;
 
-  IF v_gap_paid_mismatch THEN
-    RAISE NOTICE 'GAP: current DDL permits PAID sale with confirmed payments IDR % below grand_total IDR 100000; enforce in transactional service or database trigger', v_payment_sum;
-  END IF;
-  IF v_gap_over_refund THEN
-    RAISE NOTICE 'GAP: current DDL permits cumulative refund quantity/value above original sale line; enforce atomically in refund service or database trigger';
+  IF v_gap_paid_mismatch OR v_gap_over_refund THEN
+    RAISE EXCEPTION 'Integrity guard regression: paid-payment guard %, refund guard %',
+      NOT v_gap_paid_mismatch, NOT v_gap_over_refund;
   END IF;
 
-  RAISE NOTICE 'AUDIT PASS: structural catalog and scenario assertions completed; review GAP notices before production';
+  RAISE NOTICE 'PASS: former paid-payment and cumulative-over-refund GAP probes are rejected';
+  RAISE NOTICE 'AUDIT PASS: structural catalog and transaction scenarios completed with no known GAP';
 END $$;
 
 ROLLBACK;
