@@ -480,3 +480,16 @@ Ini bukan pertanyaan untuk mengulang spesifikasi, tetapi daftar pekerjaan desain
 8. Setelah migration stabil, dokumentasikan kontrak API.
 
 **Status dokumen:** Draft desain database logis. Belum ada tabel atau migration SQL yang diterapkan ke server. Jangan mulai coding fitur sebelum desain logis, khususnya alur kas, pembayaran pending, dan sinkronisasi offline, disepakati dan diuji.
+
+
+## 25. Dokumen turunan dan status pekerjaan
+
+Dokumen turunan yang telah dibuat:
+- `doc/ERD-DATA-DICTIONARY.md`: ERD per domain dan data dictionary.
+- `database/migrations/001_initial_schema.sql`: baseline DDL PostgreSQL awal.
+
+Status:
+- ERD dan data dictionary: draft 0.1 tersedia.
+- Migration awal: tersedia sebagai baseline, belum dijalankan pada instance PostgreSQL.
+- Belum dilakukan uji integrasi, concurrency, restore, atau pengujian migration dari database kosong.
+- Sebelum production, migration harus dijalankan pada PostgreSQL development/staging dan diperiksa dengan test otomatis.
