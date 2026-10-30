@@ -52,6 +52,7 @@ AS $$
 DECLARE
   v_sale_id uuid;
   v_status varchar(20);
+  v_sale_ids uuid[];
 BEGIN
   IF TG_TABLE_NAME = 'pos_sales' THEN
     IF TG_OP = 'INSERT' THEN
@@ -65,17 +66,24 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF TG_OP = 'DELETE' THEN
-    v_sale_id := (to_jsonb(OLD)->>'sale_id')::uuid;
+  IF TG_OP = 'INSERT' THEN
+    v_sale_ids := ARRAY[(to_jsonb(NEW)->>'sale_id')::uuid];
+  ELSIF TG_OP = 'DELETE' THEN
+    v_sale_ids := ARRAY[(to_jsonb(OLD)->>'sale_id')::uuid];
   ELSE
-    v_sale_id := (to_jsonb(NEW)->>'sale_id')::uuid;
+    v_sale_ids := ARRAY[
+      (to_jsonb(OLD)->>'sale_id')::uuid,
+      (to_jsonb(NEW)->>'sale_id')::uuid
+    ];
   END IF;
 
-  SELECT status INTO v_status FROM pos_sales WHERE id = v_sale_id;
-  IF v_status = 'paid' THEN
-    RAISE EXCEPTION 'Financial details of paid sale % are immutable', v_sale_id
-      USING ERRCODE = '23514';
-  END IF;
+  FOREACH v_sale_id IN ARRAY v_sale_ids LOOP
+    SELECT status INTO v_status FROM pos_sales WHERE id = v_sale_id;
+    IF v_status = 'paid' THEN
+      RAISE EXCEPTION 'Financial details of paid sale % are immutable', v_sale_id
+        USING ERRCODE = '23514';
+    END IF;
+  END LOOP;
 
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
   RETURN NEW;
@@ -174,6 +182,7 @@ AS $$
 DECLARE
   v_refund_id uuid;
   v_status varchar(20);
+  v_refund_ids uuid[];
 BEGIN
   IF TG_TABLE_NAME = 'pos_refunds' THEN
     IF TG_OP = 'INSERT' THEN
@@ -187,17 +196,24 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF TG_OP = 'DELETE' THEN
-    v_refund_id := (to_jsonb(OLD)->>'refund_id')::uuid;
+  IF TG_OP = 'INSERT' THEN
+    v_refund_ids := ARRAY[(to_jsonb(NEW)->>'refund_id')::uuid];
+  ELSIF TG_OP = 'DELETE' THEN
+    v_refund_ids := ARRAY[(to_jsonb(OLD)->>'refund_id')::uuid];
   ELSE
-    v_refund_id := (to_jsonb(NEW)->>'refund_id')::uuid;
+    v_refund_ids := ARRAY[
+      (to_jsonb(OLD)->>'refund_id')::uuid,
+      (to_jsonb(NEW)->>'refund_id')::uuid
+    ];
   END IF;
 
-  SELECT status INTO v_status FROM pos_refunds WHERE id = v_refund_id;
-  IF v_status = 'paid' THEN
-    RAISE EXCEPTION 'Details of paid refund % are immutable', v_refund_id
-      USING ERRCODE = '23514';
-  END IF;
+  FOREACH v_refund_id IN ARRAY v_refund_ids LOOP
+    SELECT status INTO v_status FROM pos_refunds WHERE id = v_refund_id;
+    IF v_status = 'paid' THEN
+      RAISE EXCEPTION 'Details of paid refund % are immutable', v_refund_id
+        USING ERRCODE = '23514';
+    END IF;
+  END LOOP;
 
   IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
   RETURN NEW;
