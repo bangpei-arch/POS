@@ -81,7 +81,9 @@ def cleanup():
     with psycopg.connect(DSN) as conn:
         with conn.cursor() as cur:
             cur.execute("SET search_path TO pos, public")
+            cur.execute("DELETE FROM pos_refund_lines WHERE refund_id IN (SELECT id FROM pos_refunds WHERE original_sale_id=%s)", (ids["sale"],))
             cur.execute("DELETE FROM pos_refunds WHERE original_sale_id=%s", (ids["sale"],))
+            cur.execute("DELETE FROM pos_sale_lines WHERE sale_id=%s", (ids["sale"],))
             cur.execute("DELETE FROM pos_sales WHERE id=%s", (ids["sale"],))
             cur.execute("DELETE FROM md_products WHERE id=%s", (ids["product"],))
             cur.execute("DELETE FROM org_terminals WHERE id=%s", (ids["terminal"],))
