@@ -41,6 +41,13 @@ jobs:
           psql -h localhost -p 5432 -U cloud_test -d cloud_test \
             -v ON_ERROR_STOP=1 -f database/cloud-migrations/001_mvp_cloud_schema.sql
 
+      - name: Apply cloud master alignment migration
+        env:
+          PGPASSWORD: cloud_test_password
+        run: |
+          psql -h localhost -p 5432 -U cloud_test -d cloud_test \
+            -v ON_ERROR_STOP=1 -f database/cloud-migrations/002_mvp_master_alignment.sql
+
       - name: Install Cloud API dependencies
         run: |
           python -m pip install -r apps/cloud-api/requirements-dev.txt
