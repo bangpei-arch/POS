@@ -46,11 +46,11 @@ docker exec bakery-pos-cloud-mvp-test-db psql -U pos_cloud_mvp_test -d pos_cloud
 
 ## 3. Select the disposable Store API fixture
 
-The earlier Store API pytest creates one store, server node, terminal, cashier, and product. It intentionally leaves its uniquely generated fixture rows in the disposable database.
+The earlier Store API pytest creates one store, server node, terminal, cashier, and product. It intentionally leaves its uniquely generated fixture rows in the disposable database. Debian does not need a host-installed `psql`; all SQL below runs through the dedicated Docker database container.
 
 ```bash
 export STORE_DATABASE_URL='postgresql://pos_mvp_test:pos_mvp_test_only@127.0.0.1:55433/pos_mvp_test'
-psql "$STORE_DATABASE_URL" -c "
+docker exec -i bakery-pos-store-mvp-test-db psql -v ON_ERROR_STOP=1 -U pos_mvp_test -d pos_mvp_test <<'SQL'
 SET search_path TO pos, public;
 SELECT s.id AS store_id,
        n.id AS node_id,
@@ -73,7 +73,8 @@ JOIN LATERAL (
   ORDER BY pp.valid_from DESC LIMIT 1
 ) p ON true
 ORDER BY s.created_at DESC
-LIMIT 1;"
+LIMIT 1;
+SQL
 ```
 
 Copy the returned `store_id`, `node_id`, `terminal_id`, `employee_code`, and `product_id` into shell variables. Use the fixture cashier PIN `1234` only in this disposable test DB.
@@ -197,7 +198,7 @@ Expected output: `ACKed 1 event(s)` (audit events may also be in the outbox; onl
 Local Store DB:
 
 ```bash
-psql "$STORE_DATABASE_URL" -c "
+docker exec bakery-pos-store-mvp-test-db psql -v ON_ERROR_STOP=1 -U pos_mvp_test -d pos_mvp_test -c "
 SET search_path TO pos, public;
 SELECT event_type,status,attempts,acked_at,last_error
 FROM sync_outbox
@@ -210,7 +211,7 @@ Cloud DB:
 
 ```bash
 export CLOUD_DATABASE_URL='postgresql://pos_cloud_mvp_test:pos_cloud_mvp_test_only@127.0.0.1:55434/pos_cloud_mvp_test'
-psql "$CLOUD_DATABASE_URL" -c "
+docker exec bakery-pos-cloud-mvp-test-db psql -v ON_ERROR_STOP=1 -U pos_cloud_mvp_test -d pos_cloud_mvp_test -c "
 SELECT s.source_sale_id,s.receipt_number,s.grand_total,
        count(DISTINCT l.id) AS line_count,
        count(DISTINCT p.id) AS payment_count
@@ -232,14 +233,14 @@ python scripts/sync_sender.py --once
 Expected: `ACKed 0 event(s)`; the already-sent sale must not be duplicated. Confirm:
 
 ```bash
-psql "$CLOUD_DATABASE_URL" -c "SELECT count(*) FROM replica.sales WHERE source_sale_id='$SALE_ID';"
+docker exec bakery-pos-cloud-mvp-test-db psql -v ON_ERROR_STOP=1 -U pos_cloud_mvp_test -d pos_cloud_mvp_test -c "SELECT count(*) FROM replica.sales WHERE source_sale_id='$SALE_ID';"
 ```
 
 Expected count: `1`.
 
-## 10. Important MVP limitation discovered in this test plan
+## 10. Expected behavior and scope
 
-The current sender claims all event types from the shared outbox, while the Cloud Receiver accepts only `sale.paid`. Store API also emits `audit.recorded` events. Those non-sale events currently receive permanent HTTP 422 and are moved to failed. They do not block a sale event for a different aggregate, but this is noisy and must be corrected before enabling a continuous production worker. For the one-sale smoke test, query and verify the sale event specifically. Next code patch should filter/dispatch supported event types rather than permanently failing unrelated outbox events.
+The sender calls `claim_sync_outbox_for_types` with the supported event list `sale.paid`. Other event types such as `audit.recorded` must remain pending and must not consume retry attempts. Confirm this by checking the sale event specifically in step 9. This M3 test covers one store server and paid-sale replication only; it does not validate refunds, inventory, master-data download, multi-terminal operation, or production worker supervision.
 
 ## Cleanup
 
