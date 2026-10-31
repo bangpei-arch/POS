@@ -110,7 +110,7 @@ Catatan desain:
 | `replica.sale_discounts` | Diskon otomatis/manual |
 | `replica.sale_promotion_cancellations` | Pembatalan promosi beserta alasan |
 | `replica.payments` | Pembayaran terkonfirmasi dan split tender |
-| `replica.payment_evidence`* | Metadata bukti pembayaran dan protected object reference |
+| `replica.payment_evidence` | Metadata bukti pembayaran dan protected object reference |
 | `replica.refunds` | Header refund final |
 | `replica.refund_lines` | Detail refund dan status kondisi barang |
 | `replica.refund_payments` | Breakdown payout refund |
@@ -120,7 +120,7 @@ Catatan desain:
 | `replica.cash_deposits` | Setoran kas |
 | `replica.audit_events` | Audit event yang dikirim dari toko |
 
-`replica.payment_evidence`* adalah usulan eksplisit untuk memisahkan metadata bukti pembayaran dari row pembayaran. Perlu dikonfirmasi apakah tabel terpisah lebih tepat daripada metadata pada `replica.payments`. File binary disimpan di private object storage, bukan PostgreSQL.
+`replica.payment_evidence`* adalah usulan eksplisit untuk memisahkan metadata bukti pembayaran dari row pembayaran. Diputuskan menggunakan tabel terpisah agar siklus hidup bukti, verifikasi checksum, akses object storage, dan audit dapat dikelola independen dari pembayaran. File binary disimpan di private object storage, bukan PostgreSQL.
 
 Semua fakta transaksi menyimpan identitas asal, minimal source store/node/entity, waktu asal, waktu diterima, dan business date bila relevan. Transaksi pending tidak direplikasi; hanya `sale.paid` yang menjadi fakta sale cloud.
 
