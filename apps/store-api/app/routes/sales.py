@@ -196,12 +196,15 @@ def create_sale(
 
         subtotal = _money(subtotal)
         grand_total = subtotal
+        if grand_total <= 0:
+            raise HTTPException(status_code=422, detail="MVP sale total must be greater than zero")
+
         method = connection.execute(
             """
             SELECT id, code, name, is_cash, requires_reference, is_active
             FROM md_payment_methods WHERE code=%s AND is_active
             """,
-            (body.payment_method_code.upper(),),
+            (body.payment_method_code.strip().upper(),),
         ).fetchone()
         if not method or method["code"] not in {"CASH", "TRANSFER", "QRIS"}:
             raise HTTPException(status_code=422, detail="MVP supports CASH, TRANSFER, and QRIS only")
@@ -209,7 +212,8 @@ def create_sale(
         if method["is_cash"]:
             if body.reference_number:
                 raise HTTPException(status_code=422, detail="Cash payment must not include a transfer reference")
-            if body.cash_received_amount is None or body.cash_received_amount < grand_total:
+            if (body.cash_received_amount is None or not body.cash_received_amount.is_finite()
+                    or body.cash_received_amount < grand_total):
                 raise HTTPException(status_code=422, detail="Cash received must be at least the grand total")
             cash_received = _money(body.cash_received_amount)
             change_amount = _money(cash_received - grand_total)
