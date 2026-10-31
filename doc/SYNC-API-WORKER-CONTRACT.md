@@ -230,6 +230,17 @@ Request: `{ "node_id": "uuid", "applied_cursor": 1250 }`.
 
 Cloud memvalidasi cursor tidak bergerak mundur dan tidak melampaui high-water mark perubahan yang sudah discan untuk scope node. Karena change log dapat berisi perubahan untuk toko lain, `next_cursor` menunjukkan posisi scan global, bukan nomor change terakhir yang kebetulan dikembalikan. Perubahan yang tidak relevan tetap dilewati secara aman. ACK cursor adalah telemetry/progress; sumber kebenaran penerapan tetap database lokal toko.
 
+
+### 6.4 Alokasi kuota promosi offline
+
+Kuota promosi diberikan cloud sebagai grant per promosi/per toko. Cloud mengalokasikan kuota secara atomik dan menjamin jumlah seluruh grant tidak melampaui kuota global. Grant yang didistribusikan melalui master sync sekurang-kurangnya berisi allocation_id, promotion_id, store_id, allocated_quantity, valid_from, valid_until, allocation_version, dan bukti integritas/signature.
+
+Store server menyimpan grant dan konsumsi lokal secara durable. Ketika transaksi menjadi PAID, pemakaian kuota dikurangi/dicatat dalam transaksi yang sama dengan sale dan outbox. Event sale.paid membawa promotion_id, allocation_id, dan consumed_quantity sehingga cloud dapat merekonsiliasi konsumsi secara idempotent. Pemakaian offline hanya boleh menggunakan sisa grant toko itu; tidak boleh memakai jatah toko lain atau melampaui grant.
+
+Jika kuota habis, promosi tidak diterapkan di toko tersebut sampai grant tambahan diterima. Saat toko online, cloud dapat menerbitkan grant tambahan hanya dari kuota global yang belum dialokasikan. Grant yang belum terpakai tidak boleh otomatis dialihkan hanya karena node offline atau heartbeat hilang. Re-alokasi memerlukan konfirmasi grant ditutup/tidak dapat dipakai lagi oleh node, atau berakhirnya masa grant disertai prosedur fencing/penutupan yang menjamin tidak ada transaksi tertunda yang masih dapat memakai grant. Semua alokasi, penutupan, dan rekonsiliasi tercatat audit.
+
+Worker master pull menerapkan grant secara idempotent berdasarkan allocation_id dan allocation_version. Grant tidak boleh ditimpa oleh versi lebih rendah. Konsumsi transaksi harus menyimpan referensi grant agar cloud dapat membandingkan allocated, consumed, dan remaining.
+
 ### 5.3 Bootstrap
 
 `GET /api/v1/sync/master/bootstrap`
@@ -340,7 +351,7 @@ Event names and exact payload JSON Schema must be versioned and finalized separa
 2. Batas batch/payload dan timeout final berdasarkan load test.
 3. Event payload JSON Schema final dan daftar event mana yang wajib dikirim.
 4. Kebijakan customer merge saat nomor telepon konflik lintas toko.
-5. Alokasi kuota promosi offline per toko.
+5. Detail implementasi grant kuota: format/tanda tangan grant, DDL, fencing dan penutupan/re-alokasi, serta rekonsiliasi konsumsi.
 6. Detail bootstrap master snapshot dan pemulihan cursor kedaluwarsa.
 7. Apakah event audit lengkap atau subset audit yang dikirim ke cloud.
 8. Cara menyimpan receipt pembayaran: object storage copy atau URI terproteksi.
