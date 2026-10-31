@@ -1,0 +1,52 @@
+name: Cloud API MVP validation
+
+on:
+  push:
+    paths:
+      - "apps/cloud-api/**"
+      - "database/cloud-migrations/**"
+      - ".github/workflows/cloud-api-validation.yml"
+  pull_request:
+    paths:
+      - "apps/cloud-api/**"
+      - "database/cloud-migrations/**"
+      - ".github/workflows/cloud-api-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  cloud-api-validation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: cloud_test
+          POSTGRES_USER: cloud_test
+          POSTGRES_PASSWORD: cloud_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cloud_test -d cloud_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply cloud MVP migration
+        env:
+          PGPASSWORD: cloud_test_password
+        run: |
+          psql -h localhost -p 5432 -U cloud_test -d cloud_test \
+            -v ON_ERROR_STOP=1 -f database/cloud-migrations/001_mvp_cloud_schema.sql
+
+      - name: Install Cloud API dependencies
+        run: |
+          python -m pip install -r apps/cloud-api/requirements-dev.txt
+
+      - name: Run Cloud API authentication and bootstrap tests
+        working-directory: apps/cloud-api
+        env:
+          CLOUD_DATABASE_URL: postgresql://cloud_test:cloud_test_password@localhost:5432/cloud_test
+        run: pytest -q
