@@ -144,8 +144,8 @@ Reporting bukan sumber kebenaran dan harus dapat dibangun ulang dari schema `rep
 1. Tetapkan kolom, tipe data, nullability, PK/FK, unique constraint, dan check constraint per tabel.
 2. Tentukan pemisahan data master global vs scoped per toko dan aturan tenant isolation.
 3. Tetapkan strategi partisi dan registry idempotensi global lintas partisi.
-4. Tentukan relasi detail antara sale, payment, refund, audit, dan bukti pembayaran.
-5. Putuskan apakah `replica.payment_evidence` menjadi tabel tersendiri.
+4. Review relasi detail antara sale, payment, refund, audit, dan bukti pembayaran terhadap kontrak event.
+5. Selaraskan seluruh inventaris dengan desain fisik; `replica.payment_evidence` sudah diputuskan sebagai tabel tersendiri.
 6. Tetapkan indeks berdasarkan query API, rekonsiliasi, dan laporan yang nyata.
 7. Tentukan backup cloud, RPO/RTO, PITR, dan uji restore.
 8. Uji migration dan extension pada PostgreSQL 16 serta versi mayor lebih baru yang akan dipilih.
