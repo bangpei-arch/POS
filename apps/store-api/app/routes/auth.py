@@ -35,6 +35,7 @@ def login(body: LoginInput, connection: Connection = Depends(get_connection)):
         SELECT id, employee_code, full_name, pin_hash, status,
                failed_pin_attempts, locked_until
         FROM iam_users WHERE employee_code = %s
+        FOR UPDATE
         """,
         (body.employee_code.strip(),),
     ).fetchone()
