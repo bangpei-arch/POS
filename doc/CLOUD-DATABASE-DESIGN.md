@@ -89,7 +89,7 @@ Versi master melekat pada entitas atau record efektif. Harga dan pajak menggunak
 
 Kolom inti `master_change_log`: `change_seq BIGINT`, `entity_type`, `entity_id`, `entity_version`, `operation` (upsert/deactivate), `target_store_id nullable`, `effective_at`, `payload`, `published_at`.
 
-**Aturan cursor:** counter diambil dengan row lock dan ditulis dalam transaksi yang sama dengan perubahan master dan change-log. Ini membuat urutan publikasi commit-ordered. Sequence PostgreSQL biasa tanpa mekanisme serialisasi tidak boleh diasumsikan commit-ordered. Toko hanya memajukan cursor setelah semua perubahan dalam batch berhasil diterapkan lokal.
+**Aturan cursor:** counter diambil dengan row lock dan ditulis dalam transaksi yang sama dengan perubahan master dan change-log. Ini membuat urutan publikasi commit-ordered. Sequence PostgreSQL biasa tanpa mekanisme serialisasi tidak boleh diasumsikan commit-ordered. Toko hanya memajukan cursor setelah semua perubahan dalam batch berhasil diterapkan lokal. Di database lokal toko, cursor ini disimpan pada tabel baru `sync_master_cursors` (scope node/stream, applied_change_seq, updated_at) yang diperbarui atomik bersama penerapan batch; jangan memakai `sync_checkpoints` lama sebagai cursor resume karena tabel tersebut hanya watermark observasional.
 
 ### 3.5 Event ingestion dan recovery cloud
 
@@ -103,7 +103,7 @@ Kolom inti `master_change_log`: `change_seq BIGINT`, `entity_type`, `entity_id`,
 
 Envelope wajib membawa `event_id`, `idempotency_key`, `source_node_id`, `source_store_id`, `aggregate_type`, `aggregate_id`, `aggregate_version`, `event_type`, `schema_version`, `occurred_at`, `correlation_id`, dan `payload`. Simpan hash payload untuk mendeteksi penggunaan ulang event_id dengan isi berbeda.
 
-Constraint unik aggregate: (source_node_id, aggregate_type, aggregate_id, aggregate_version). Event dengan versi lompat tidak boleh diproyeksikan sebelum versi sebelumnya diproses atau diselesaikan melalui prosedur skip yang diaudit.
+Constraint unik aggregate: (source_node_id, aggregate_type, aggregate_id, aggregate_version). Event dengan versi lompat tidak boleh diproyeksikan sebelum versi sebelumnya diproses atau diselesaikan melalui prosedur skip yang diaudit. Dependency lintas aggregate juga diperiksa: misalnya `refund.paid` harus ditahan sampai `original_sale_id` tersedia di replica, walaupun sequence aggregate refund sendiri sudah berurutan.
 
 ### 3.6 Replika transaksi immutable
 
