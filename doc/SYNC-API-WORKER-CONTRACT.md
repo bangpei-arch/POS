@@ -323,7 +323,7 @@ Update agregasi dari fakta `replica` setelah transaksi projection commit. Gunaka
 
 Event names and exact payload JSON Schema must be versioned and finalized separately. A sale event should represent the final PAID aggregate; drafts and Hold Orders are not sent to cloud.
 
-## 10. Observability, security, and operations
+## 11. Observability, security, dan operations
 
 - TLS wajib; credential scope hanya satu store-server dan store_id yang terdaftar.
 - Rate limit per node/store; max body size; request timeout; clock skew monitored.
@@ -336,7 +336,7 @@ Event names and exact payload JSON Schema must be versioned and finalized separa
 
 ## 12. Keputusan yang perlu disahkan sebelum API/worker coding
 
-1. Parameter OAuth2 yang dikunci saat security review: masa hidup token 5 menit, algoritma ES256/RS256, dan daftar scope.
+1. Verifikasi parameter keamanan OAuth2 saat security review: masa hidup token 5 menit, pilihan final ES256 atau RS256, dan scope minimum per endpoint.
 2. Batas batch/payload dan timeout final berdasarkan load test.
 3. Event payload JSON Schema final dan daftar event mana yang wajib dikirim.
 4. Kebijakan customer merge saat nomor telepon konflik lintas toko.
