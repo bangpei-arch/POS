@@ -17,6 +17,8 @@ def main() -> None:
     parser.add_argument("--store-code", required=True)
     parser.add_argument("--store-name", required=True)
     parser.add_argument("--node-code", required=True)
+    parser.add_argument("--store-id", help="Existing local org_stores UUID; generate a new UUID if omitted")
+    parser.add_argument("--node-id", help="Existing local sync_nodes UUID; generate a new UUID if omitted")
     parser.add_argument("--timezone", default="Asia/Jakarta")
     parser.add_argument("--currency", default="IDR")
     args = parser.parse_args()
@@ -25,8 +27,8 @@ def main() -> None:
     if not dsn:
         raise SystemExit("CLOUD_DATABASE_URL is required")
 
-    store_id = uuid.uuid4()
-    node_id = uuid.uuid4()
+    store_id = uuid.UUID(args.store_id) if args.store_id else uuid.uuid4()
+    node_id = uuid.UUID(args.node_id) if args.node_id else uuid.uuid4()
     client_id = f"pos-{args.node_code.lower()}"
     client_secret = secrets.token_urlsafe(48)
     secret_hash = PasswordHasher().hash(client_secret)

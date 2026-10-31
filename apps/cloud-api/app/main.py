@@ -5,7 +5,7 @@ from psycopg import Connection
 
 from app.config import get_settings
 from app.database import create_pool, get_connection
-from app.routes import heartbeat, keys, master, oauth
+from app.routes import events, heartbeat, keys, master, oauth
 
 
 @asynccontextmanager
@@ -32,6 +32,7 @@ app = FastAPI(
 )
 
 app.include_router(oauth.router)
+app.include_router(events.router)
 app.include_router(master.router)
 app.include_router(heartbeat.router)
 app.include_router(keys.router)

@@ -1,6 +1,7 @@
 # POS Cloud API — MVP M1
 
 Cloud API tahap pertama menyediakan:
+- Receiver POST /api/v1/sync/events:batch untuk event sale.paid; validasi node/store, hash payload, total transaksi, dan pembayaran; proyeksi replica + status processed inbox dalam satu transaksi.
 - OAuth2 Client Credentials token endpoint (HTTP Basic over HTTPS).
 - RS256 JWT access token, TTL 5 menit.
 - Token verification dengan issuer, audience, signature, expiry, node status, dan credential version.
@@ -9,7 +10,7 @@ Cloud API tahap pertama menyediakan:
 - Public RS256 JWKS endpoint.
 - PostgreSQL connection pool.
 
-Belum termasuk event receiver, reporting endpoint, store API, sender worker, atau UI.
+Belum termasuk refund/session replication, incremental master sync, reporting endpoint lanjutan, atau UI. Sender worker berjalan di server toko.
 
 ## Development
 
