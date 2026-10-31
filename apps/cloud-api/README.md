@@ -6,6 +6,7 @@ Cloud API tahap pertama menyediakan:
 - Token verification dengan issuer, audience, signature, expiry, node status, dan credential version.
 - Master bootstrap snapshot untuk produk, harga aktif, metode pembayaran, dan metadata toko.
 - Store server heartbeat.
+- Public RS256 JWKS endpoint.
 - PostgreSQL connection pool.
 
 Belum termasuk event receiver, reporting endpoint, store API, sender worker, atau UI.
@@ -17,8 +18,22 @@ Belum termasuk event receiver, reporting endpoint, store API, sender worker, ata
 3. Buat RSA development keypair:
    `bash apps/cloud-api/scripts/generate-dev-jwt-keys.sh`
 4. Salin .env.example menjadi .env dan sesuaikan DSN/key path.
-5. Buat credential Argon2id untuk client secret melalui provisioning admin tool (belum tersedia pada M1); jangan menyimpan secret plaintext di database.
-6. Jalankan:
+5. Provision store/server credential (secret hanya tampil satu kali):
+
+   ```bash
+   export CLOUD_DATABASE_URL='postgresql://...'
+   python scripts/provision_node.py --store-code SDR --store-name 'Sudirman' --node-code SDR-SRV01
+   ```
+
+   Simpan client_id/client_secret di secret store server toko. Jangan masukkan output ke Git atau chat.
+6. Import master produk dari CSV (UUID produk harus stabil):
+
+   ```bash
+   python scripts/import_products.py master-products.csv
+   ```
+
+   Format kolom: id,sku,name,barcode,price. Metode pembayaran CASH, TRANSFER, QRIS sudah di-seed migration.
+7. Jalankan:
 
    ```bash
    cd apps/cloud-api
