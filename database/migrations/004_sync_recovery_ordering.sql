@@ -30,6 +30,16 @@ SET aggregate_version = ranked.version_no
 FROM ranked
 WHERE ranked.id = o.id;
 
+-- A pre-migration "sending" row has no trustworthy lease owner. Requeue it
+-- before validating the new status/lease shape constraint.
+UPDATE sync_outbox
+SET status = 'pending',
+    claimed_by = NULL,
+    claim_token = NULL,
+    claimed_at = NULL,
+    lease_until = NULL
+WHERE status = 'sending';
+
 ALTER TABLE sync_outbox
   ALTER COLUMN aggregate_version SET NOT NULL,
   ALTER COLUMN max_attempts SET DEFAULT 12,
@@ -42,15 +52,6 @@ ALTER TABLE sync_outbox
     (status <> 'sending' AND claimed_by IS NULL AND claim_token IS NULL
       AND claimed_at IS NULL AND lease_until IS NULL)
   );
-
--- A pre-migration "sending" row has no trustworthy lease owner. Requeue it.
-UPDATE sync_outbox
-SET status = 'pending',
-    claimed_by = NULL,
-    claim_token = NULL,
-    claimed_at = NULL,
-    lease_until = NULL
-WHERE status = 'sending';
 
 CREATE UNIQUE INDEX uq_sync_outbox_aggregate_version
   ON sync_outbox(node_id, aggregate_type, aggregate_id, aggregate_version);
@@ -205,7 +206,18 @@ SET search_path = pos, public
 AS $$
 DECLARE
   v_row sync_outbox%ROWTYPE;
+  v_worker varchar(120);
 BEGIN
+  SELECT claimed_by INTO v_worker
+  FROM sync_outbox
+  WHERE id = p_outbox_id AND status = 'sending'
+    AND claim_token = p_claim_token AND lease_until > now()
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
   UPDATE sync_outbox
   SET status = 'sent',
       sent_at = now(),
@@ -228,7 +240,7 @@ BEGIN
   INSERT INTO sync_delivery_attempts(
     outbox_id, result, response_code, claim_token, worker_id
   ) VALUES (
-    v_row.id, 'success', p_response_code, p_claim_token, v_row.claimed_by
+    v_row.id, 'success', p_response_code, p_claim_token, v_worker
   );
   RETURN true;
 END;
@@ -539,6 +551,11 @@ ALTER TABLE sync_inventory_events
   ADD COLUMN ack_payload jsonb,
   ADD COLUMN last_error_class varchar(40);
 
+UPDATE sync_inventory_events
+SET status = 'pending',
+    claimed_by = NULL, claim_token = NULL, claimed_at = NULL, lease_until = NULL
+WHERE status = 'sending';
+
 ALTER TABLE sync_inventory_events
   ADD CONSTRAINT ck_sync_inventory_max_attempts CHECK (max_attempts BETWEEN 1 AND 100),
   ADD CONSTRAINT ck_sync_inventory_lease_shape CHECK (
@@ -549,10 +566,19 @@ ALTER TABLE sync_inventory_events
       AND claimed_at IS NULL AND lease_until IS NULL)
   );
 
-UPDATE sync_inventory_events
-SET status = 'pending',
-    claimed_by = NULL, claim_token = NULL, claimed_at = NULL, lease_until = NULL
-WHERE status = 'sending';
+CREATE TABLE sync_inventory_delivery_attempts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  inventory_event_id uuid NOT NULL REFERENCES sync_inventory_events(id),
+  attempted_at timestamptz NOT NULL DEFAULT now(),
+  result varchar(20) NOT NULL,
+  worker_id varchar(120),
+  claim_token uuid,
+  error_class varchar(40),
+  response_payload jsonb,
+  error_message text
+);
+CREATE INDEX ix_sync_inventory_attempts_event_time
+  ON sync_inventory_delivery_attempts(inventory_event_id, attempted_at DESC);
 
 CREATE INDEX ix_sync_inventory_expired_lease
   ON sync_inventory_events(lease_until, created_at)
@@ -621,17 +647,31 @@ CREATE OR REPLACE FUNCTION ack_sync_inventory_event(
 RETURNS boolean
 LANGUAGE plpgsql
 SET search_path = pos, public
-AS $$
+AS $
+DECLARE
+  v_worker varchar(120);
 BEGIN
+  SELECT claimed_by INTO v_worker
+  FROM sync_inventory_events
+  WHERE id = p_event_id AND status = 'sending'
+    AND claim_token = p_claim_token AND lease_until > now()
+  FOR UPDATE;
+  IF NOT FOUND THEN RETURN false; END IF;
+
   UPDATE sync_inventory_events
   SET status = 'sent', acked_at = now(), ack_payload = p_response_payload,
       next_retry_at = NULL, last_error = NULL, last_error_class = NULL,
       claimed_by = NULL, claim_token = NULL, claimed_at = NULL, lease_until = NULL
   WHERE id = p_event_id AND status = 'sending'
     AND claim_token = p_claim_token AND lease_until > now();
-  RETURN FOUND;
+  IF NOT FOUND THEN RETURN false; END IF;
+
+  INSERT INTO sync_inventory_delivery_attempts(
+    inventory_event_id, result, worker_id, claim_token, response_payload
+  ) VALUES (p_event_id, 'success', v_worker, p_claim_token, p_response_payload);
+  RETURN true;
 END;
-$$;
+$;
 
 CREATE OR REPLACE FUNCTION fail_sync_inventory_event(
   p_event_id uuid,
@@ -669,9 +709,17 @@ BEGIN
         claimed_by = NULL, claim_token = NULL, claimed_at = NULL, lease_until = NULL
     WHERE id = p_event_id;
   END IF;
+
+  INSERT INTO sync_inventory_delivery_attempts(
+    inventory_event_id, result, worker_id, claim_token, error_class, error_message
+  ) VALUES (
+    p_event_id,
+    CASE WHEN p_permanent OR v_row.attempts >= v_row.max_attempts THEN 'failed' ELSE 'retry' END,
+    v_row.claimed_by, p_claim_token, p_error_class, p_error
+  );
   RETURN true;
 END;
-$$;
+$;
 
 COMMENT ON COLUMN sync_outbox.sent_at IS
   'Compatibility timestamp; set only after a valid receiver ACK. Not merely HTTP send time.';
