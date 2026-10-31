@@ -26,6 +26,13 @@ psql "$CLOUD_DATABASE_URL" -v ON_ERROR_STOP=1 \
 
 The smoke test runs inside a transaction and rolls back its fixture data.
 
+Apply cloud master alignment migration after 001:
+
+```bash
+psql "$CLOUD_DATABASE_URL" -v ON_ERROR_STOP=1 \\
+  -f database/cloud-migrations/002_mvp_master_alignment.sql
+```
+
 ## Safety
 
 - Never point CLOUD_DATABASE_URL at the store-local database.
