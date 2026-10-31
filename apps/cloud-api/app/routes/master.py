@@ -26,7 +26,7 @@ def master_bootstrap(
 
     products = connection.execute(
         """
-        SELECT p.id, p.sku, p.product_name, p.barcode, p.tax_code, p.tax_rate,
+        SELECT p.id, p.sku, p.product_name, p.barcode, p.base_uom_code, p.version, p.tax_code, p.tax_rate,
                price.price, price.version AS price_version
         FROM cloud.products p
         JOIN LATERAL (
@@ -45,7 +45,7 @@ def master_bootstrap(
 
     methods = connection.execute(
         """
-        SELECT code, display_name, requires_manual_confirmation
+        SELECT code, display_name, method_type, requires_reference, is_cash, version
         FROM cloud.payment_methods
         WHERE is_active
         ORDER BY code
@@ -71,6 +71,8 @@ def master_bootstrap(
                 "sku": p["sku"],
                 "name": p["product_name"],
                 "barcode": p["barcode"],
+                "base_uom_code": p["base_uom_code"],
+                "product_version": p["version"],
                 "tax_code": p["tax_code"],
                 "tax_rate": format(p["tax_rate"], ".4f"),
                 "price": format(p["price"], ".2f"),
