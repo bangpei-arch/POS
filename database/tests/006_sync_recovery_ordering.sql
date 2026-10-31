@@ -114,8 +114,8 @@ BEGIN
 
   -- Idempotency keys are scoped by source node, not globally across all nodes.
   INSERT INTO sync_inbox(
-    source_node_id,event_id,idempotency_key,aggregate_type,aggregate_id,aggregate_version
-  ) VALUES (v_node2,gen_random_uuid(),'same-key-node-1','sale',gen_random_uuid(),1);
+    source_node_id,event_id,idempotency_key
+  ) VALUES (v_node2,gen_random_uuid(),'same-key-node-1');
 
   SELECT * INTO v_inbox_claim FROM claim_sync_inbox('inbox-worker',10,120);
   IF v_inbox_claim.event_id <> v_inbox1 OR v_inbox_claim.aggregate_version <> 1 THEN
