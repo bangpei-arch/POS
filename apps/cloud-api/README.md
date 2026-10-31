@@ -14,10 +14,16 @@ Belum termasuk event receiver, reporting endpoint, store API, sender worker, ata
 ## Development
 
 1. Buat cloud database PostgreSQL 16.
-2. Terapkan migration cloud: lihat ../../database/cloud-migrations/README.md.
-3. Buat RSA development keypair:
-   `bash apps/cloud-api/scripts/generate-dev-jwt-keys.sh`
-4. Salin .env.example menjadi .env dan sesuaikan DSN/key path.
+2. Dari root repository, terapkan migration cloud: lihat ../../database/cloud-migrations/README.md.
+3. Masuk ke folder API dan siapkan environment:
+
+   ```bash
+   cd apps/cloud-api
+   cp .env.example .env
+   bash scripts/generate-dev-jwt-keys.sh
+   ```
+
+4. Edit .env dan arahkan JWT_PRIVATE_KEY_PATH/JWT_PUBLIC_KEY_PATH ke file pada ./dev-secrets. Atur CLOUD_DATABASE_URL ke database cloud.
 5. Provision store/server credential (secret hanya tampil satu kali):
 
    ```bash
@@ -36,7 +42,6 @@ Belum termasuk event receiver, reporting endpoint, store API, sender worker, ata
 7. Jalankan:
 
    ```bash
-   cd apps/cloud-api
    python -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
