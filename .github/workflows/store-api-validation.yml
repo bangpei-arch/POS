@@ -1,0 +1,55 @@
+name: Store API MVP validation
+
+on:
+  push:
+    paths:
+      - "apps/store-api/**"
+      - "database/migrations/**"
+      - ".github/workflows/store-api-validation.yml"
+  pull_request:
+    paths:
+      - "apps/store-api/**"
+      - "database/migrations/**"
+      - ".github/workflows/store-api-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  store-api-validation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pos_test
+          POSTGRES_USER: pos_test
+          POSTGRES_PASSWORD: pos_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pos_test -d pos_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply local POS migrations
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          for migration in database/migrations/001_initial_schema.sql database/migrations/002_integrity_guards.sql database/migrations/003_transaction_finality.sql database/migrations/004_sync_recovery_ordering.sql database/migrations/005_mvp_pos_fields.sql; do
+            psql -h localhost -p 5432 -U pos_test -d pos_test -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+      - name: Install Store API dependencies
+        run: python -m pip install -r apps/store-api/requirements-dev.txt
+
+      - name: Compile Store API modules and scripts
+        run: python -m compileall -q apps/store-api/app apps/store-api/scripts apps/store-api/tests
+
+      - name: Run local sale cycle integration test
+        working-directory: apps/store-api
+        env:
+          STORE_DATABASE_URL: postgresql://pos_test:pos_test_password@localhost:5432/pos_test
+        run: pytest -q
