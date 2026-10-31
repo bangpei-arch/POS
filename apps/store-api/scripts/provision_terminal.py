@@ -38,6 +38,7 @@ def main() -> None:
     pin_hash = PasswordHasher().hash(pin)
 
     with psycopg.connect(dsn) as conn:
+        conn.execute("SET search_path TO pos, public")
         with conn.cursor() as cur:
             role = cur.execute("SELECT id FROM iam_roles WHERE code='CASHIER'").fetchone()
             if not role:
