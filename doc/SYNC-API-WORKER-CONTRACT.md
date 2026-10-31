@@ -2,7 +2,7 @@
 
 **Versi:** 0.1 (draft kontrak)  
 **Tanggal:** 31 Oktober 2026  
-**Status:** Draft untuk review; belum implementasi runtime  
+**Status:** Kontrak target MVP ditetapkan pada Bagian 14; bagian lain memuat desain pasca-MVP  
 **Acuan:** migration lokal 004, CLOUD-DATABASE-DESIGN.md, spesifikasi fungsional POS v8.0.
 
 ## 1. Komponen dan arah komunikasi
@@ -397,3 +397,82 @@ Store server mempertahankan file lokal sementara secara durable sampai cloud men
 ## 13. Batas tahap ini
 
 Ini adalah kontrak logis v0.1. Belum ada FastAPI route, Pydantic schema, worker Python, DDL cloud, atau integration test runtime. Implementasi baru dimulai setelah kontrak dan keputusan terbuka disetujui.
+
+
+## 14. Kontrak implementasi MVP (mengikat untuk milestone pertama)
+
+Bagian ini mengesampingkan fitur yang lebih luas pada bagian sebelumnya untuk rilis MVP. Gunakan juga dokumen MVP-END-TO-END-PLAN.md.
+
+### 14.1 Komponen aktif MVP
+
+- Terminal PWA/browser → Store API.
+- Store API + PostgreSQL lokal + transactional outbox.
+- Satu Store Sender Worker.
+- Cloud OAuth/token endpoint + Cloud Receiver API.
+- Satu PostgreSQL cloud dengan migration terpisah di database/cloud-migrations.
+- Master bootstrap endpoint dan laporan penjualan pusat.
+- Tidak ada Cloud Inbox Worker terpisah pada MVP. Receiver memproses sinkron secara langsung dalam transaksi DB dan hanya mengirim final ACK setelah commit. Worker/queue cloud asinkron menjadi opsi setelah beban nyata menuntutnya.
+
+### 14.2 Endpoint minimum
+
+| Method | Path | Fungsi |
+|---|---|---|
+| POST | /api/v1/oauth/token | Client Credentials; token JWT 5 menit |
+| GET | /api/v1/sync/master/bootstrap | Snapshot produk, harga aktif, metode pembayaran, store ID, master_version |
+| POST | /api/v1/sync/events:batch | Menerima sale.paid dan audit.recorded |
+| POST | /api/v1/sync/heartbeat | Heartbeat store server |
+| GET | /api/v1/reports/sales | Laporan transaksi pusat dengan filter store/date |
+
+MVP bootstrap adalah snapshot penuh dan read-only. Incremental master stream, cursor ACK, promotion grants, customer merge, dan offline authorization refresh ditunda.
+
+### 14.3 Event bisnis sale.paid
+
+- Event schema: doc/schemas/sale.paid.v1.schema.json.
+- Envelope wajib: event_id, idempotency_key, source_node_id, source_store_id, aggregate_type, aggregate_id, aggregate_version, event_type, schema_version, occurred_at, correlation_id, payload_sha256, payload.
+- aggregate_type = sale; aggregate_id = source sale UUID; aggregate_version = 1; event_type = sale.paid; schema_version = 1.
+- Payload berisi sale header snapshot, satu atau lebih sale lines, dan confirmed payments. Pending payment tidak dikirim.
+- Semua nominal dikirim sebagai decimal string; server mengubah ke NUMERIC tanpa float.
+- payload_sha256 = SHA-256 atas byte payload JSON yang dikirim. Retry harus mengirim byte-equivalent payload dan event_id yang sama.
+- Cloud memvalidasi signature token, node/store claims, JSON Schema, hash, UUID, receipt uniqueness, aggregate version, minimal satu line/payment, SUM(line_total)=grand_total, dan SUM(confirmed payment)=grand_total.
+- Cloud menyimpan event registry + sale + lines + payments dalam satu transaksi. Event registry status menjadi processed dalam transaksi yang sama. Panggil replica.assert_sale_complete(sale_id) sebelum commit.
+- Duplicate event dengan event_id/idempotency key sama dan hash sama mengembalikan already_processed; event identity sama dengan hash berbeda mengembalikan 409 conflict. Duplicate source sale/receipt juga tidak boleh membuat row kedua.
+- Cloud tidak memperbarui master stock atau inventory pada MVP.
+
+### 14.4 Event audit allowlist
+
+- Event type: audit.recorded; schema doc/schemas/audit.recorded.v1.schema.json.
+- Hanya action yang terdaftar dalam CHECK constraint replica.audit_events yang diterima.
+- Payload dibatasi actor ID, terminal ID, action, entity type/id, reason, correlation ID, occurred_at.
+- Jangan kirim PIN/hash PIN, password, client secret, JWT, bukti pembayaran, full customer PII, atau before/after JSON.
+- Audit bukan pengganti event bisnis sale.paid. Audit yang gagal tidak boleh membatalkan transaksi PAID lokal; sender menyimpan retry terpisah.
+
+### 14.5 Semantik respons
+
+- 200 processed: cloud sudah commit; sender ACK outbox.
+- 200 already_processed: cloud sudah memiliki event/hash yang sama; sender ACK outbox.
+- 409 conflict: identitas sama dengan payload/hash berbeda atau konflik receipt; tandai permanent failure dan butuh investigasi.
+- 422 rejected: schema/business validation gagal; permanent failure/dead-letter lokal.
+- 429/5xx/network timeout: transient; retry dengan backoff full jitter. Bila timeout terjadi setelah cloud commit, retry aman karena idempotensi.
+- Jangan pernah ACK event sebagai sent hanya karena HTTP request berhasil dikirim; hanya respons final processed/already_processed setelah commit.
+
+### 14.6 Retensi dan laporan
+
+- processed payload event disimpan 90 hari; setelah itu payload boleh NULL, event ID/idempotency/hash/status tetap disimpan.
+- permanent failed/dead-letter sampai resolved dan minimal satu tahun.
+- replica sales/lines/payments lima tahun; audit tiga tahun.
+- MVP laporan memakai reporting.v_sales dan query detail replica; agregasi materialized/reporting worker ditunda.
+
+### 14.7 Mapping transaksi lokal ke cloud
+
+- pos_sales.id → replica.sales.source_sale_id
+- pos_sales.store_id → replica.sales.source_store_id
+- sync_nodes.id → replica.sales.source_node_id
+- pos_sales.terminal_id/cashier_id → source_terminal_id/source_cashier_id
+- pos_sale_lines.id → replica.sale_lines.source_line_id
+- pos_payments.id → replica.payments.source_payment_id
+- Cloud PK dibuat sendiri; source UUID tetap disimpan.
+- Snapshot name/SKU/price/tax/payment method dari transaksi lokal adalah sumber transaksi, bukan lookup master terkini.
+
+### 14.8 Batas offline MVP
+
+Penjualan tetap dapat berlangsung ketika internet cloud putus, selama terminal dapat mengakses Store API dan kasir sudah login. Transaksi PAID dan outbox tersimpan lokal lalu dikirim saat internet pulih. Kegagalan store server/LAN, offline login cache, dan terminal-side IndexedDB durable queue ditunda untuk milestone berikutnya.
