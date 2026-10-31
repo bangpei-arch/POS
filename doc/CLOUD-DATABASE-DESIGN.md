@@ -61,6 +61,7 @@ Autentikasi node memakai OAuth 2.0 Client Credentials. Setiap store-server memil
 | Tabel | Fungsi |
 |---|---|
 | `cloud.users` | Identitas pegawai pusat |
+| `cloud.user_pin_credentials` | Hash PIN Argon2id dan versi credential untuk cache offline terproteksi |
 | `cloud.roles`, `cloud.permissions` | Role dan permission |
 | `cloud.role_permissions` | Relasi role-permission |
 | `cloud.user_store_assignments` | Penempatan pegawai per toko |
@@ -82,6 +83,7 @@ Cloud menjadi pemilik tabel logis:
 - `cloud.product_display_order`
 - `cloud.uoms`
 - `cloud.promotions`, `cloud.promotion_conditions`, `cloud.promotion_benefits`, `cloud.promotion_products`, `cloud.promotion_quotas`, `cloud.promotion_quota_allocations`
+- `cloud.manual_discount_limits` (batas diskon manual per role/user dan scope toko)
 - `cloud.payment_methods`
 - `cloud.store_hours`, `cloud.store_exceptions`
 - `cloud.cash_drawer_policies` (nominal modal tetap per terminal/laci)
