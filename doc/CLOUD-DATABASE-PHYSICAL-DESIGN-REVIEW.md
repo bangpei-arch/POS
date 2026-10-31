@@ -2,7 +2,7 @@
 
 **Review:** 1  
 **Tanggal:** 31 Oktober 2026  
-**Status:** Temuan awal; perbaikan sedang diterapkan pada desain fisik v0.2.  
+**Status:** Review 1 selesai; temuan struktur utama sudah diterapkan ke draft physical design v0.2. Beberapa detail akhir masih perlu review event contract dan audit policy.  
 **Cakupan:** Physical design, inventory, logical cloud design, local/cloud boundary, dan sync contract.  
 **Tidak termasuk:** implementasi aplikasi, FastAPI, worker runtime, dan migration database toko.
 
@@ -83,6 +83,21 @@ Tabel baru `replica.source_entity_registry` dan `ingest.retention_actions` sudah
 6. Hash PIN Argon2id; cloud hanya distribusikan hash terproteksi, bukan PIN.
 7. Evidence dimulai `pending_upload`, berubah ke `verified` setelah verifikasi object storage.
 8. Promotion quota consumption menjadi fakta eksplisit dan idempotent.
+
+## Status perbaikan review 1
+
+- R1/R2: composite FK tenant ownership dan parent-child mulai diterapkan pada schema replica/ingest; harus diverifikasi ulang saat DDL tests.
+- R3: `ingest.received_events` tidak dipartisi pada baseline DDL.
+- R4: `cloud.manual_discount_limits` ditambahkan.
+- R5: `replica.promotion_quota_consumptions` ditambahkan.
+- R6: `cloud.user_pin_credentials` dengan Argon2id ditambahkan; distribusi tetap terenkripsi dan cache offline 24 jam.
+- R7: payment evidence default `pending_upload`, `verified_at` wajib untuk status verified.
+- R8: cloud FK menggunakan `sale_line_id`; source IDs dibedakan dari cloud PK.
+- R9/R10: terminal node unique dan satu active server per toko ditetapkan.
+- R11/R12: temporal overlap dijaga dengan locking transaction; nullable unique memakai `NULLS NOT DISTINCT` PostgreSQL 16.
+- R13: refund projection harus resolve original sale/line lewat typed source registry sebelum commit.
+- R14: retention audit append-only dan terpisah dari payload purge.
+- R15: inventory diselaraskan ke 71 tabel fisik.
 
 ## Urutan perbaikan
 
