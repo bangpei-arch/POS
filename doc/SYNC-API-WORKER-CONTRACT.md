@@ -374,6 +374,13 @@ Metadata yang disimpan pada cloud minimal mencakup payment_id, sale_id, object_k
 
 Store server mempertahankan file lokal sementara secara durable sampai cloud mengonfirmasi object tersimpan dan checksum cocok serta metadata sudah terikat ke payment/transaksi. Setelah konfirmasi tersebut barulah file lokal boleh dihapus. Upload gagal/timeout di-retry secara idempotent; transaksi PAID tidak dibatalkan dan bukti lokal tidak boleh hilang. Gunakan object key unik/tidak mudah ditebak, bukan nama file asli. Jangan menimpa object bukti yang sudah direferensikan tanpa membuat versi/jejak audit.
 
+### Retensi event di cloud
+
+- Raw event yang berhasil diproses: 90 hari sejak pemrosesan/ingest final. Setelah itu payload mentah boleh dihapus oleh job retensi; metadata minimum untuk deduplikasi, cursor, dan audit dipertahankan sesuai kebutuhan teknis.
+- Event gagal/permanen (dead-letter): dipertahankan sampai diselesaikan melalui replay atau keputusan skip/penutupan yang diaudit. Setelah penyelesaian, payload dan metadata dead-letter disimpan minimal 1 tahun sejak pertama masuk dead-letter.
+- Fakta transaksi hasil proyeksi tetap disimpan/diarsipkan selama 5 tahun. Penghapusan raw event tidak menghapus fakta transaksi hasil proyeksi.
+- Setiap replay, skip, dan penghapusan event/payload wajib dicatat dalam audit dengan actor, alasan, waktu, target, dan tindakan. Audit mengikuti retensi 3 tahun sesuai baseline, kecuali legal hold.
+
 ## 12. Keputusan yang perlu disahkan sebelum API/worker coding
 
 1. Verifikasi parameter keamanan OAuth2 saat security review: masa hidup token 5 menit, pilihan final ES256 atau RS256, dan scope minimum per endpoint.
@@ -385,7 +392,7 @@ Store server mempertahankan file lokal sementara secara durable sampai cloud men
 7. Apakah event audit lengkap atau subset audit yang dikirim ke cloud.
 
 
-10. Kebijakan retention payload raw event, retry failed, dan dead-letter.
+
 
 ## 13. Batas tahap ini
 
