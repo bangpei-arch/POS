@@ -51,7 +51,7 @@ def list_products(
         WHERE p.is_active
           AND COALESCE(availability.is_available, true)
           AND (
-            %s IS NULL OR p.sku ILIKE %s OR p.name ILIKE %s
+            %s::text IS NULL OR p.sku ILIKE %s OR p.name ILIKE %s
             OR barcode.barcode ILIKE %s
           )
         ORDER BY p.name, p.sku
