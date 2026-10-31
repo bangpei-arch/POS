@@ -25,8 +25,9 @@ BEGIN
     INSERT INTO cloud.product_prices(product_id, price, valid_from, version)
     VALUES ('40000000-0000-0000-0000-000000000001', 12500, now() - interval '1 day', 1);
 
-    INSERT INTO cloud.payment_methods(code, display_name)
-    VALUES ('CASH', 'Tunai');
+    IF NOT EXISTS (SELECT 1 FROM cloud.payment_methods WHERE code = 'CASH' AND is_active) THEN
+        RAISE EXCEPTION 'MVP CASH payment method seed is missing';
+    END IF;
 
     INSERT INTO ingest.event_registry(
         source_node_id, source_store_id, event_id, idempotency_key,
