@@ -38,7 +38,7 @@ jobs:
         env:
           PGPASSWORD: pos_test_password
         run: |
-          for migration in database/migrations/001_initial_schema.sql database/migrations/002_integrity_guards.sql database/migrations/003_transaction_finality.sql database/migrations/004_sync_recovery_ordering.sql database/migrations/005_mvp_pos_fields.sql; do
+          for migration in database/migrations/001_initial_schema.sql database/migrations/002_integrity_guards.sql database/migrations/003_transaction_finality.sql database/migrations/004_sync_recovery_ordering.sql database/migrations/005_mvp_pos_fields.sql database/migrations/006_sync_outbox_event_filter.sql; do
             psql -h localhost -p 5432 -U pos_test -d pos_test -v ON_ERROR_STOP=1 -f "$migration"
           done
 
@@ -47,6 +47,9 @@ jobs:
 
       - name: Compile Store API modules and scripts
         run: python -m compileall -q apps/store-api/app apps/store-api/scripts apps/store-api/tests
+
+      - name: Verify sender CLI can start
+        run: python apps/store-api/scripts/sync_sender.py --help
 
       - name: Run local sale cycle integration test
         working-directory: apps/store-api

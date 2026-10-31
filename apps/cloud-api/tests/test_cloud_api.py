@@ -88,6 +88,10 @@ def cloud_api(tmp_path, monkeypatch):
         }
 
     with psycopg.connect(dsn) as conn:
+        conn.execute("DELETE FROM replica.payments WHERE source_store_id=%s", (store_id,))
+        conn.execute("DELETE FROM replica.sale_lines WHERE source_store_id=%s", (store_id,))
+        conn.execute("DELETE FROM replica.sales WHERE source_store_id=%s", (store_id,))
+        conn.execute("DELETE FROM ingest.event_registry WHERE source_store_id=%s", (store_id,))
         conn.execute("DELETE FROM cloud.product_prices WHERE product_id=%s", (product_id,))
         conn.execute("DELETE FROM cloud.products WHERE id=%s", (product_id,))
         conn.execute("DELETE FROM cloud.node_credentials WHERE node_id=%s", (node_id,))
@@ -190,6 +194,108 @@ def test_token_cannot_use_unrequested_scope(cloud_api):
     response = ctx["client"].post(
         "/api/v1/sync/heartbeat",
         json={"app_version": "0.1.0"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_sale_paid_receiver_is_idempotent_and_returns_final_ack(cloud_api):
+    import hashlib
+    import json
+
+    ctx = cloud_api
+    token_response = token_for(ctx, scope="sync:events:write")
+    assert token_response.status_code == 200
+    token = token_response.json()["access_token"]
+
+    sale_id, terminal_id, cashier_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    line_id, product_id, payment_id, event_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "sale": {
+            "sale_id": str(sale_id), "terminal_id": str(terminal_id), "cashier_id": str(cashier_id),
+            "receipt_number": "TST-20261031-POS01-000001", "business_date": "2026-10-31",
+            "currency_code": "IDR", "subtotal": "12500.00", "discount_total": "0.00",
+            "tax_total": "0.00", "rounding_amount": "0.00", "grand_total": "12500.00",
+            "paid_at": now,
+        },
+        "lines": [{
+            "line_id": str(line_id), "product_id": str(product_id), "sku": "TEST-1",
+            "name": "Test Product", "barcode": None, "quantity": 1, "unit_price": "12500.00",
+            "gross_amount": "12500.00", "discount_amount": "0.00", "tax_code": "ZERO",
+            "tax_rate": "0.0000", "tax_amount": "0.00", "line_total": "12500.00",
+        }],
+        "payments": [{
+            "payment_id": str(payment_id), "method_code": "CASH", "method_name": "Tunai",
+            "amount": "12500.00", "reference_number": None, "confirmed_at": now,
+        }],
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    event = {
+        "event_id": str(event_id), "idempotency_key": f'{ctx["node_id"]}:{event_id}',
+        "aggregate_type": "sale", "aggregate_id": str(sale_id), "aggregate_version": 1,
+        "event_type": "sale.paid", "schema_version": 1, "occurred_at": now,
+        "payload_sha256": hashlib.sha256(raw).hexdigest(), "payload": payload,
+    }
+    batch = {
+        "protocol_version": 1, "source_node_id": str(ctx["node_id"]),
+        "source_store_id": str(ctx["store_id"]), "worker_id": "test-sender", "events": [event],
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    first = ctx["client"].post("/api/v1/sync/events:batch", json=batch, headers=headers)
+    assert first.status_code == 200, first.text
+    assert first.json()["results"][0]["status"] == "processed"
+    second = ctx["client"].post("/api/v1/sync/events:batch", json=batch, headers=headers)
+    assert second.status_code == 200, second.text
+    assert second.json()["results"][0]["status"] == "already_processed"
+
+    # Reusing only one side of the event identity must not ACK a different event.
+    key_collision = {**event, "event_id": str(uuid.uuid4())}
+    key_collision_batch = {**batch, "events": [key_collision]}
+    key_conflict = ctx["client"].post(
+        "/api/v1/sync/events:batch", json=key_collision_batch, headers=headers
+    )
+    assert key_conflict.status_code == 409
+
+    event_collision = {**event, "idempotency_key": f'{ctx["node_id"]}:different-key'}
+    event_collision_batch = {**batch, "events": [event_collision]}
+    event_conflict = ctx["client"].post(
+        "/api/v1/sync/events:batch", json=event_collision_batch, headers=headers
+    )
+    assert event_conflict.status_code == 409
+
+    with psycopg.connect(ctx["dsn"]) as conn:
+        assert conn.execute(
+            "SELECT count(*) FROM replica.sales WHERE source_store_id=%s AND source_sale_id=%s",
+            (ctx["store_id"], sale_id),
+        ).fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT count(*) FROM ingest.event_registry WHERE source_node_id=%s AND event_id=%s AND status='processed'",
+            (ctx["node_id"], event_id),
+        ).fetchone()[0] == 1
+
+
+def test_sale_paid_receiver_rejects_hash_and_source_mismatch(cloud_api):
+    import hashlib
+    import json
+
+    ctx = cloud_api
+    token = token_for(ctx, scope="sync:events:write").json()["access_token"]
+    payload = {"sale": {}, "lines": [], "payments": []}
+    now = datetime.now(timezone.utc).isoformat()
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    event = {
+        "event_id": str(uuid.uuid4()), "idempotency_key": "mismatch-test",
+        "aggregate_type": "sale", "aggregate_id": str(uuid.uuid4()), "aggregate_version": 1,
+        "event_type": "sale.paid", "schema_version": 1, "occurred_at": now,
+        "payload_sha256": hashlib.sha256(raw).hexdigest(), "payload": payload,
+    }
+    batch = {
+        "protocol_version": 1, "source_node_id": str(uuid.uuid4()),
+        "source_store_id": str(ctx["store_id"]), "worker_id": "test-sender", "events": [event],
+    }
+    response = ctx["client"].post(
+        "/api/v1/sync/events:batch", json=batch,
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403

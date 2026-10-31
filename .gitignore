@@ -10,5 +10,6 @@ __pycache__/
 .ruff_cache/
 dev-secrets/
 **/dev-secrets/
+**/test-results/
 
 *.pem

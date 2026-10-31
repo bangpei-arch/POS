@@ -1,0 +1,24 @@
+services:
+  postgres-cloud:
+    image: postgres:16-alpine
+    container_name: bakery-pos-cloud-mvp-test-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pos_cloud_mvp_test
+      POSTGRES_USER: pos_cloud_mvp_test
+      POSTGRES_PASSWORD: pos_cloud_mvp_test_only
+      TZ: Asia/Jakarta
+    ports:
+      - "127.0.0.1:55434:5432"
+    volumes:
+      - pos_cloud_mvp_test_data:/var/lib/postgresql/data
+      - ./database/cloud-migrations:/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos_cloud_mvp_test -d pos_cloud_mvp_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pos_cloud_mvp_test_data:
+    name: bakery_pos_cloud_mvp_test_data

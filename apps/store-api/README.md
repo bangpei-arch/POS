@@ -103,3 +103,20 @@ Contoh payload sale:
 - Produk bertax_rate > 0 ditolak untuk mencegah salah hitung pajak.
 - Tidak ada UI frontend pada milestone M2; API diuji melalui OpenAPI/HTTP. UI terminal menjadi langkah berikutnya.
 - Sender worker dan cloud receiver belum ada pada M2; transaksi PAID sudah masuk outbox lokal dan menunggu M3.
+
+
+## Cloud sale event sender (M3)
+
+Set CLOUD_API_BASE_URL, CLOUD_CLIENT_ID, and CLOUD_CLIENT_SECRET in the store server environment. Keep the client secret outside source control and restrict file permissions. After applying local migrations 001–005 and provisioning the matching cloud node, run from apps/store-api:
+
+```bash
+python scripts/sync_sender.py --once
+```
+
+For a continuously running worker:
+
+```bash
+python scripts/sync_sender.py --poll-seconds 5
+```
+
+The worker claims ordered outbox rows using the database lease/fencing function, obtains a short-lived OAuth token, sends sale.paid, and marks the outbox row sent only after the cloud returns processed or already_processed. Network/5xx failures are retried with jitter; permanent 4xx failures move the event to failed for operator review. Cloud final ACK is committed only after the sale header, lines, payments, and processed event registry commit together.

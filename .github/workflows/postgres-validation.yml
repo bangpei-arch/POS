@@ -119,6 +119,20 @@ jobs:
           psql -h localhost -p 5432 -U pos_test -d pos_test \
             -v ON_ERROR_STOP=1 -f database/tests/008_mvp_pos_fields.sql
 
+      - name: Run M3 outbox event filter migration
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/migrations/006_sync_outbox_event_filter.sql
+
+      - name: Run M3 filtered outbox regression test
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/tests/009_sync_outbox_event_filter.sql
+
       - name: Run concurrent sync claim test
         env:
           POS_TEST_DSN: postgresql://pos_test:pos_test_password@localhost:5432/pos_test

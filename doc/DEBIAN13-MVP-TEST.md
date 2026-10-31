@@ -38,11 +38,11 @@ until docker exec bakery-pos-store-mvp-test-db pg_isready -U pos_mvp_test -d pos
 
 Database hanya bind ke localhost port 55433 dan memakai volume khusus `bakery_pos_store_mvp_test_data`.
 
-## 3. Terapkan migrasi local-store 001–005
+## 3. Terapkan migrasi local-store 001–006
 
 ```bash
 set -e
-for migration in 001_initial_schema.sql 002_integrity_guards.sql 003_transaction_finality.sql 004_sync_recovery_ordering.sql 005_mvp_pos_fields.sql; do
+for migration in 001_initial_schema.sql 002_integrity_guards.sql 003_transaction_finality.sql 004_sync_recovery_ordering.sql 005_mvp_pos_fields.sql 006_sync_outbox_event_filter.sql; do
   docker exec -i bakery-pos-store-mvp-test-db psql -v ON_ERROR_STOP=1 -U pos_mvp_test -d pos_mvp_test < "database/migrations/$migration"
 done
 ```
@@ -93,4 +93,4 @@ Jangan jalankan down -v pada compose proyek lain.
 
 ## Batas hasil tes
 
-Tes ini memvalidasi Store API dan transaksi/outbox lokal pada satu server toko. Ini belum membuktikan sinkronisasi ke cloud. Sender worker, cloud receiver, ACK, dan uji alur toko-ke-pusat adalah milestone berikutnya.
+Tes ini memvalidasi Store API dan transaksi/outbox lokal pada satu server toko. Ini belum membuktikan sinkronisasi ke cloud. Sender worker, cloud receiver, ACK, dan uji alur toko-ke-pusat adalah milestone M3; gunakan panduan doc/DEBIAN13-M3-END-TO-END.md.
