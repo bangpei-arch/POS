@@ -647,7 +647,7 @@ CREATE OR REPLACE FUNCTION ack_sync_inventory_event(
 RETURNS boolean
 LANGUAGE plpgsql
 SET search_path = pos, public
-AS $
+AS $$
 DECLARE
   v_worker varchar(120);
 BEGIN
@@ -671,7 +671,7 @@ BEGIN
   ) VALUES (p_event_id, 'success', v_worker, p_claim_token, p_response_payload);
   RETURN true;
 END;
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION fail_sync_inventory_event(
   p_event_id uuid,
@@ -719,7 +719,7 @@ BEGIN
   );
   RETURN true;
 END;
-$;
+$$;
 
 COMMENT ON COLUMN sync_outbox.sent_at IS
   'Compatibility timestamp; set only after a valid receiver ACK. Not merely HTTP send time.';
