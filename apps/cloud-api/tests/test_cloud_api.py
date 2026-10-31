@@ -96,14 +96,17 @@ def cloud_api(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
-def token_for(ctx, secret=None):
+def token_for(ctx, secret=None, scope=None):
     client = ctx["client"]
     basic = base64.b64encode(
         f'{ctx["client_id"]}:{secret or ctx["client_secret"]}'.encode()
     ).decode()
+    form_data = {"grant_type": "client_credentials"}
+    if scope:
+        form_data["scope"] = scope
     response = client.post(
         "/api/v1/oauth/token",
-        data={"grant_type": "client_credentials"},
+        data=form_data,
         headers={"Authorization": f"Basic {basic}"},
     )
     return response
@@ -174,3 +177,16 @@ def test_revoked_credential_invalidates_existing_token(cloud_api):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 401
+
+
+def test_token_cannot_use_unrequested_scope(cloud_api):
+    ctx = cloud_api
+    token_response = token_for(ctx, scope="sync:master:read")
+    assert token_response.status_code == 200
+    token = token_response.json()["access_token"]
+    response = ctx["client"].post(
+        "/api/v1/sync/heartbeat",
+        json={"app_version": "0.1.0"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
