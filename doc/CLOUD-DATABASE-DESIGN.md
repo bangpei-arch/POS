@@ -39,10 +39,11 @@ Nama di atas adalah logical schema. DDL final dapat menyesuaikan setelah review 
 | `cloud.store_servers` | Satu local server aktif/terdaftar per toko, termasuk penggantian | UUID PK; store FK; server_code unique; status dan app_version |
 | `cloud.terminals` | Registry terminal | UUID PK; (store_id, terminal_code) unique; disabled_at |
 | `cloud.sync_nodes` | Identitas node pengirim/penerima | node_id unique; node_type; store_id; terminal_id bila relevan |
-| `cloud.node_credentials` | Identitas kredensial mesin | node_id FK; credential hash/key reference; valid_from/revoked_at; secret tidak disimpan plaintext |
+| `cloud.node_credentials` | Identitas OAuth client per node | node_id FK; client_id unique; client_secret_hash; allowed_scopes; valid_from/expires_at/revoked_at; credential_version; metadata rotasi; secret tidak disimpan plaintext |
 | `cloud.node_heartbeats` | Telemetri node | node_id + observed_at; append-only/partitioned |
 
 Node store-server adalah principal sinkronisasi utama ke cloud. Terminal mengirim transaksi ke store-server; terminal tidak mendapat kredensial cloud langsung pada rancangan awal.
+Autentikasi node memakai OAuth 2.0 Client Credentials. Setiap store-server memiliki client_id/client_secret unik dan meminta JWT access token 5 menit melalui cloud authorization endpoint. Cloud menyimpan hash secret, bukan secret plaintext; signing key JWT dikelola KMS/secret manager. Klaim token mengikat sub ke node_id dan store_id serta membawa scope terbatas. Terminal POS tidak memiliki credential cloud. Rotasi/revocation credential dicatat dan tidak menghapus outbox pending di toko.
 
 ### 3.2 IAM dan otorisasi pusat
 
