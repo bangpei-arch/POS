@@ -235,6 +235,47 @@ CREATE TABLE replica.audit_events (
 );
 CREATE INDEX ix_replica_audit_store_time ON replica.audit_events(source_store_id, occurred_at DESC);
 
+-- Receiver MUST call this after inserting sale header, lines, and confirmed payments,
+-- and before marking the event processed. Aggregate checks cannot be expressed as CHECK constraints.
+CREATE FUNCTION replica.assert_sale_complete(p_sale_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+AS $
+DECLARE
+    v_grand_total numeric(18,2);
+    v_line_total numeric(18,2);
+    v_payment_total numeric(18,2);
+    v_line_count bigint;
+    v_payment_count bigint;
+BEGIN
+    SELECT grand_total INTO v_grand_total
+    FROM replica.sales WHERE id = p_sale_id FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'sale % not found', p_sale_id USING ERRCODE = '23503';
+    END IF;
+
+    SELECT count(*), COALESCE(sum(line_total), 0)
+      INTO v_line_count, v_line_total
+      FROM replica.sale_lines WHERE sale_id = p_sale_id;
+
+    SELECT count(*), COALESCE(sum(amount), 0)
+      INTO v_payment_count, v_payment_total
+      FROM replica.payments WHERE sale_id = p_sale_id;
+
+    IF v_line_count < 1 OR v_payment_count < 1 THEN
+        RAISE EXCEPTION 'sale % requires at least one line and one confirmed payment', p_sale_id
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF v_line_total <> v_grand_total OR v_payment_total <> v_grand_total THEN
+        RAISE EXCEPTION 'sale % total mismatch: header %, lines %, payments %',
+            p_sale_id, v_grand_total, v_line_total, v_payment_total
+            USING ERRCODE = '23514';
+    END IF;
+END;
+$;
+
 CREATE VIEW reporting.v_sales AS
 SELECT s.source_store_id AS store_id, st.store_code, st.store_name,
        s.business_date, s.receipt_number, s.grand_total, s.currency_code,
