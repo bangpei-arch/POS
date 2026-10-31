@@ -163,7 +163,7 @@ Unique constraints cloud:
 - `(source_node_id,idempotency_key)`
 - `(source_node_id,aggregate_type,aggregate_id,aggregate_version)`
 
-Jika event_id/key sama dan payload hash sama, return status existing. Jika hash berbeda, return 409 conflict dan alert. Aggregate version harus cursor + 1; versi berikutnya ditahan sampai gap diselesaikan. Satu aggregate tidak boleh diproses paralel keluar urutan. Aggregate berbeda boleh paralel.
+Jika event_id/key sama dan payload hash sama, return status existing. Jika hash berbeda, return 409 conflict dan alert. Aggregate version harus cursor + 1; versi berikutnya ditahan sampai gap diselesaikan. Satu aggregate tidak boleh diproses paralel keluar urutan. Aggregate berbeda boleh paralel. Dependency lintas aggregate tetap divalidasi, misalnya refund harus menunggu sale asal tersedia di cloud.
 
 ## 5. Master data Cloud ke Store
 
@@ -204,7 +204,7 @@ Ketentuan:
 
 Request: `{ "node_id": "uuid", "applied_cursor": 1250 }`.
 
-Cloud memvalidasi cursor tidak bergerak mundur dan tidak melampaui perubahan yang pernah diterbitkan untuk scope node. ACK cursor adalah telemetry/progress; sumber kebenaran penerapan tetap database lokal toko.
+Cloud memvalidasi cursor tidak bergerak mundur dan tidak melampaui high-water mark perubahan yang sudah discan untuk scope node. Karena change log dapat berisi perubahan untuk toko lain, `next_cursor` menunjukkan posisi scan global, bukan nomor change terakhir yang kebetulan dikembalikan. Perubahan yang tidak relevan tetap dilewati secara aman. ACK cursor adalah telemetry/progress; sumber kebenaran penerapan tetap database lokal toko.
 
 ### 5.3 Bootstrap
 
