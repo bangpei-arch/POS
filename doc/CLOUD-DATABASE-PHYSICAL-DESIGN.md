@@ -304,7 +304,7 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.sale_discounts`
 - Kolom: `id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `sale_line_id uuid?`; `source_sale_line_id uuid?`; `discount_type varchar(30)`; `amount numeric(18,2)`; `source varchar(20)`; `promotion_id uuid?`; `applied_by_source_user_id uuid?`; `reason text?`.
-- PK id. FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`; sale_line_id → sale_lines(id). UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`; FK `(sale_line_id,sale_id)` → sale_lines `(id,sale_id)`. UQ `(source_store_id,source_entity_id)`.
 - CK amount >= 0; source IN ('promotion','manual').
 - IX `(sale_id)`; `(promotion_id)`.
 
