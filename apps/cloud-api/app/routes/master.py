@@ -26,7 +26,7 @@ def master_bootstrap(
 
     products = connection.execute(
         """
-        SELECT p.id, p.sku, p.product_name, p.barcode,
+        SELECT p.id, p.sku, p.product_name, p.barcode, p.tax_code, p.tax_rate,
                price.price, price.version AS price_version
         FROM cloud.products p
         JOIN LATERAL (
@@ -71,6 +71,8 @@ def master_bootstrap(
                 "sku": p["sku"],
                 "name": p["product_name"],
                 "barcode": p["barcode"],
+                "tax_code": p["tax_code"],
+                "tax_rate": format(p["tax_rate"], ".4f"),
                 "price": format(p["price"], ".2f"),
                 "price_version": p["price_version"],
             }
