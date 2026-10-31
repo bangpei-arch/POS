@@ -193,7 +193,10 @@ Hanya transaksi sale berstatus PAID yang direplikasi sebagai fakta bisnis melalu
 - Partisi bulanan untuk tabel transaksi/telemetry besar setelah volume terukur; jangan mempartisi tabel master.
 - Unique idempotency harus tetap enforceable lintas partisi. Jika unique global tidak dapat ditegakkan langsung pada tabel partisi, gunakan tabel registry idempotency non-partitioned.
 - Indeks transaksi berdasarkan `(source_store_id,business_date)`, `(source_store_id,source_entity_id)`, serta kombinasi laporan yang benar-benar dipakai.
-- Inbox payload dan audit perlu kebijakan retensi terpisah dari fakta transaksi.
+- Raw event yang berhasil diproses disimpan 90 hari sejak waktu pemrosesan/ingest final, lalu payload mentah boleh dihapus sesuai job retensi; metadata minimum untuk deduplikasi, cursor, dan audit dipertahankan sesuai kebutuhan teknis.
+- Event gagal/permanen (dead-letter) dipertahankan sampai berhasil diselesaikan melalui replay atau keputusan skip/penutupan yang diaudit. Setelah diselesaikan, payload dan metadata dead-letter dipertahankan sekurang-kurangnya 1 tahun sejak pertama kali masuk dead-letter; tidak boleh dihapus sebelum status penyelesaian tercatat.
+- Fakta transaksi hasil proyeksi tetap mengikuti retensi/arsip transaksi POS selama 5 tahun. Penghapusan raw event tidak menghapus fakta hasil proyeksi.
+- Setiap replay, skip, dan penghapusan payload/event wajib menghasilkan audit record berisi actor, alasan, waktu, target, dan tindakan; audit mengikuti retensi 3 tahun sesuai baseline, kecuali legal hold.
 - Retensi transaksi POS mengikuti keputusan 5 tahun dan mekanisme arsip; audit mengikuti 3 tahun sesuai baseline, kecuali legal hold.
 - Backup cloud terpisah dari backup node toko. Restore test berkala dan RPO/RTO cloud ditetapkan pada desain infrastruktur.
 - PII pelanggan dan bukti pembayaran harus dibatasi dengan role, enkripsi at-rest/in-transit, akses audit, dan kebijakan ekspor.
@@ -203,7 +206,7 @@ Hanya transaksi sale berstatus PAID yang direplikasi sebagai fakta bisnis melalu
 
 2. Detail implementasi grant kuota promosi: struktur DDL, tanda tangan/integritas grant, prosedur penutupan/re-alokasi, dan rekonsiliasi penggunaan.
 3. Detail implementasi cache otorisasi: format timestamp sinkronisasi NTP, ambang deteksi perubahan jam mencurigakan, dan mekanisme menjaga masa berlaku tetap aman saat reboot/server clock rollback.
-4. Retensi payload event mentah dibanding retensi fakta transaksi 5 tahun.
+
 5. Target volume, ukuran payload, dan batas partisi sebelum memilih indeks/partitioning final.
 6. RPO/RTO serta lokasi backup/arsip cloud.
 7. Model hak akses owner/management untuk PII dan detail bukti pembayaran.
