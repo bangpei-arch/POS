@@ -249,12 +249,6 @@ Notasi spesifikasi per tabel:
 - CK aggregate_version > 0; octet_length(payload_sha256)=32; final_status IN ('processed','rejected','dead_letter') OR NULL.
 - IX `(source_node_id,first_seen_at)`. Non-partitioned; retained as long as duplicate prevention is required, even after raw payload expiry.
 
-#### `replica.source_entity_registry`
-- Kolom: `id uuid`; `source_store_id uuid`; `entity_type varchar(40)`; `source_entity_id uuid`; `replica_table varchar(80)`; `replica_id uuid`; `business_date date?`; `registered_at timestamptz`.
-- PK id. FK source_store_id → cloud.stores. UQ `(source_store_id,entity_type,source_entity_id)`.
-- IX `(replica_table,replica_id)`; `(source_store_id,business_date)`.
-- Non-partitioned global identity registry. Menjaga identitas sumber tetap unik saat tabel fakta dipartisi; insert registry dan row fakta wajib dalam transaksi yang sama.
-
 #### `ingest.received_events`
 - Kolom: `id uuid`; `source_node_id uuid`; `source_store_id uuid`; `event_id uuid`; `idempotency_key varchar(140)`; `aggregate_type varchar(60)`; `aggregate_id uuid`; `aggregate_version bigint`; `event_type varchar(80)`; `schema_version integer`; `occurred_at timestamptz`; `correlation_id uuid?`; `payload_sha256 bytea`; `payload jsonb?`; `status varchar(20) DEFAULT 'received'`; `received_at timestamptz`; `processed_at timestamptz?`; `next_retry_at timestamptz?`; `dead_lettered_at timestamptz?`; `last_error_code varchar(60)?`; `last_error text?`.
 - PK id. FK `(source_node_id,source_store_id)` → cloud.sync_nodes `(id,store_id)`. UQ `(source_node_id,event_id)`. Registry mereferensikan event melalui `(source_node_id,event_id)`; buat received_events lebih dahulu. Tabel ini tidak dipartisi pada migration awal karena child FK memerlukan kunci stabil.
@@ -327,7 +321,7 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.payments`
 - Kolom: `id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `source_payment_method_id uuid`; `payment_method_code_snapshot varchar(30)`; `payment_method_name_snapshot varchar(80)`; `amount numeric(18,2)`; `status varchar(20)`; `reference_number varchar(120)?`; `confirmed_by_source_user_id uuid?`; `confirmed_at timestamptz`; `created_at_source timestamptz`.
-- PK id. FK sale_id → sales. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`. UQ `(source_store_id,source_entity_id)`; UQ `(id,sale_id)` for payment evidence.
 - CK amount > 0; status = 'confirmed'; confirmed_at IS NOT NULL.
 - IX `(sale_id)`; `(source_store_id,payment_method_code_snapshot,confirmed_at)`.
 
@@ -352,7 +346,7 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.refund_payments`
 - Kolom: `id uuid`; `refund_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `payment_method_code_snapshot varchar(30)`; `amount numeric(18,2)`; `reference_number varchar(120)?`; `status varchar(20) DEFAULT 'confirmed'`; `paid_at timestamptz`.
-- PK id. FK refund_id → refunds. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(refund_id,source_store_id)` → refunds `(id,source_store_id)`. UQ `(source_store_id,source_entity_id)`.
 - CK amount > 0; status='confirmed'.
 - IX `(refund_id)`.
 
@@ -385,6 +379,12 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 - PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`.
 - CK action <> ''; entity_type <> ''.
 - IX `(source_store_id,occurred_at DESC)`; `(actor_source_user_id,occurred_at DESC)`; BRIN received_at. Restrict PII/secrets in before/after payload.
+
+#### `replica.source_entity_registry`
+- Kolom: `id uuid`; `source_store_id uuid`; `entity_type varchar(40)`; `source_entity_id uuid`; `replica_table varchar(80)`; `replica_id uuid`; `business_date date?`; `registered_at timestamptz`.
+- PK id. FK source_store_id → cloud.stores. UQ `(source_store_id,entity_type,source_entity_id)`.
+- IX `(replica_table,replica_id)`; `(source_store_id,business_date)`.
+- Non-partitioned global identity registry. Menjaga identitas sumber tetap unik saat tabel fakta dipartisi; insert registry dan row fakta wajib dalam transaksi yang sama.
 
 ## 5. Schema reporting
 
