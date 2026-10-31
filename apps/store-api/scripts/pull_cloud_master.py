@@ -46,6 +46,7 @@ def main() -> None:
     methods = master["payment_methods"]
 
     with psycopg.connect(dsn) as conn:
+        conn.execute("SET search_path TO pos, public")
         with conn.cursor() as cur:
             cur.execute(
                 """
