@@ -360,6 +360,20 @@ Proses merge harus atomik dan race-safe. ID canonical yang paling dahulu dibuat 
 - Backup dan restore test cloud terpisah dari local.
 - Manual replay/skip memerlukan alasan, actor, approval/permission, dan immutable audit trail.
 
+### 11.1 Upload bukti pembayaran non-tunai
+
+
+
+File bukti pembayaran bersifat opsional sesuai aturan metode pembayaran. Jika ada, store server mengunggah file ke private object storage cloud melalui alur upload terotorisasi (misalnya request upload URL sementara dari API cloud, lalu upload langsung ke object storage). File binary tidak dikirim sebagai bagian dari event JSON dan tidak disimpan di PostgreSQL.
+
+
+
+Metadata yang disimpan pada cloud minimal mencakup payment_id, sale_id, object_key/URI internal, checksum SHA-256, ukuran byte, MIME type, nama file yang disanitasi, uploaded_at, source_node_id, dan status verifikasi. Akses unduh menggunakan authorization service atau signed URL berumur pendek; object tidak boleh public. Semua akses baca/unduh diaudit.
+
+
+
+Store server mempertahankan file lokal sementara secara durable sampai cloud mengonfirmasi object tersimpan dan checksum cocok serta metadata sudah terikat ke payment/transaksi. Setelah konfirmasi tersebut barulah file lokal boleh dihapus. Upload gagal/timeout di-retry secara idempotent; transaksi PAID tidak dibatalkan dan bukti lokal tidak boleh hilang. Gunakan object key unik/tidak mudah ditebak, bukan nama file asli. Jangan menimpa object bukti yang sudah direferensikan tanpa membuat versi/jejak audit.
+
 ## 12. Keputusan yang perlu disahkan sebelum API/worker coding
 
 1. Verifikasi parameter keamanan OAuth2 saat security review: masa hidup token 5 menit, pilihan final ES256 atau RS256, dan scope minimum per endpoint.
@@ -369,7 +383,7 @@ Proses merge harus atomik dan race-safe. ID canonical yang paling dahulu dibuat 
 5. Detail implementasi grant kuota: format/tanda tangan grant, DDL, fencing dan penutupan/re-alokasi, serta rekonsiliasi konsumsi.
 6. Detail bootstrap master snapshot dan pemulihan cursor kedaluwarsa.
 7. Apakah event audit lengkap atau subset audit yang dikirim ke cloud.
-8. Cara menyimpan receipt pembayaran: object storage copy atau URI terproteksi.
+
 9. Apakah terminal submit PAID sale hanya setelah finalisasi lokal penuh, atau juga perlu mengirim PAYMENT_PENDING sebagai event operasional.
 10. Kebijakan retention payload raw event, retry failed, dan dead-letter.
 
