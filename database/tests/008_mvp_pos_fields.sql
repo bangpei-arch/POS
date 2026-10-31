@@ -30,10 +30,10 @@ BEGIN
 
     INSERT INTO pos_sales(
         id, receipt_number, store_id, terminal_id, cashier_id, business_date,
-        status, currency_code, subtotal, grand_total, cash_session_id, idempotency_key
+        status, currency_code, subtotal, grand_total, cash_session_id, idempotency_key, idempotency_hash
     ) VALUES (
         v_sale, 'MVP-' || substr(v_sale::text,1,12), v_store, v_terminal, v_user,
-        current_date, 'draft', 'IDR', 100, 100, v_session, 'req-' || v_sale::text
+        current_date, 'draft', 'IDR', 100, 100, v_session, 'req-' || v_sale::text, decode(repeat('a',64),'hex')
     );
 
     INSERT INTO pos_sale_lines(
@@ -75,10 +75,10 @@ BEGIN
     BEGIN
         INSERT INTO pos_sales(
             receipt_number, store_id, terminal_id, cashier_id, business_date,
-            currency_code, cash_session_id, idempotency_key
+            currency_code, cash_session_id, idempotency_key, idempotency_hash
         ) VALUES (
             'DUP-' || substr(v_sale::text,1,12), v_store, v_terminal, v_user,
-            current_date, 'IDR', v_session, 'req-' || v_sale::text
+            current_date, 'IDR', v_session, 'req-' || v_sale::text, decode(repeat('b',64),'hex')
         );
         RAISE EXCEPTION 'duplicate sale idempotency key unexpectedly succeeded';
     EXCEPTION WHEN unique_violation THEN
