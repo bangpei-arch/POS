@@ -45,6 +45,9 @@ jobs:
         run: |
           python -m pip install -r apps/cloud-api/requirements-dev.txt
 
+      - name: Compile all Cloud API modules and scripts
+        run: python -m compileall -q apps/cloud-api/app apps/cloud-api/scripts apps/cloud-api/tests
+
       - name: Run Cloud API authentication and bootstrap tests
         working-directory: apps/cloud-api
         env:
