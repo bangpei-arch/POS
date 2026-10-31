@@ -67,10 +67,14 @@ def current_cashier(
          AND ura.valid_from <= now()
          AND (ura.valid_until IS NULL OR ura.valid_until > now())
         JOIN iam_roles r ON r.id = ura.role_id AND r.code = 'CASHIER'
+        JOIN org_stores s ON s.id = usa.store_id AND s.is_active
+        JOIN org_terminals t
+          ON t.id = %s AND t.store_id = usa.store_id AND t.is_active
+         AND (t.primary_cashier_id IS NULL OR t.primary_cashier_id = u.id)
         WHERE u.id = %s AND u.status = 'active'
         LIMIT 1
         """,
-        (settings.store_id, settings.store_id, claims["sub"]),
+        (settings.store_id, settings.store_id, settings.terminal_id, claims["sub"]),
     ).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="Cashier is inactive or no longer assigned")
