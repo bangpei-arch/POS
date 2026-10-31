@@ -7,6 +7,7 @@ DECLARE
     v_node uuid := '20000000-0000-0000-0000-000000000001';
     v_sale uuid;
     v_event uuid := '30000000-0000-0000-0000-000000000001';
+    v_second_store uuid := '11000000-0000-0000-0000-000000000001';
     v_count bigint;
 BEGIN
     INSERT INTO cloud.stores(id, store_code, store_name)
@@ -86,6 +87,34 @@ BEGIN
     IF v_count <> 1 THEN
         RAISE EXCEPTION 'reporting view did not return exactly one sale';
     END IF;
+
+    -- Cross-store child linkage must fail even when both stores and nodes exist.
+    INSERT INTO cloud.stores(id, store_code, store_name)
+    VALUES (v_second_store, 'MVP02', 'Second Test Store');
+    BEGIN
+        INSERT INTO replica.sale_lines(
+            sale_id, source_store_id, source_line_id, sku_snapshot, name_snapshot,
+            quantity, unit_price, gross_amount, discount_amount,
+            tax_rate_snapshot, tax_amount, line_total
+        ) VALUES (
+            v_sale, v_second_store, '81000000-0000-0000-0000-000000000001',
+            'BAD-SKU', 'Cross tenant attempt', 1, 1, 1, 0, 0, 0, 1
+        );
+        RAISE EXCEPTION 'cross-store sale line unexpectedly succeeded';
+    EXCEPTION WHEN foreign_key_violation THEN
+        NULL;
+    END;
+
+    -- Header/line/payment totals are checked before an event can be marked processed.
+    UPDATE replica.payments SET amount = 12000 WHERE sale_id = v_sale;
+    BEGIN
+        PERFORM replica.assert_sale_complete(v_sale);
+        RAISE EXCEPTION 'mismatched payment total unexpectedly succeeded';
+    EXCEPTION WHEN check_violation THEN
+        NULL;
+    END;
+    UPDATE replica.payments SET amount = 12500 WHERE sale_id = v_sale;
+    PERFORM replica.assert_sale_complete(v_sale);
 
     -- Duplicate event identity must be rejected by a unique constraint.
     BEGIN
