@@ -2,7 +2,7 @@
 
 **Versi:** 0.1 (rancangan logis)  
 **Tanggal:** 31 Oktober 2026  
-**Status:** Draft untuk review; belum DDL/migration dan belum production-ready  
+**Status:** Logical target jangka panjang; MVP menggunakan subset DDL terpisah dan tidak mengimplementasikan seluruh kelompok tabel  
 **Basis:** Spesifikasi fungsional POS v8.0, database lokal migration 001–004, dan DATABASE-BOUNDARIES-LOCAL-CLOUD.md.
 
 ## 1. Tujuan dan prinsip
@@ -227,3 +227,8 @@ Hanya transaksi sale berstatus PAID yang direplikasi sebagai fakta bisnis melalu
 ## 7. Batas tahap ini
 
 Dokumen ini adalah desain logis cloud v0.1. Belum berisi DDL, migration, API runtime, worker runtime, atau jaminan production readiness. DDL baru boleh dibuat setelah tabel, constraint, ownership, retensi, dan keputusan terbuka disetujui.
+
+
+## 8. Batas MVP
+
+MVP hanya mengimplementasikan satu vertical slice penjualan PAID dari satu terminal/store server ke cloud. Cloud DDL MVP terpisah berada di database/cloud-migrations/001_mvp_cloud_schema.sql. Full master, promotion, customer merge, refund, evidence object storage, cash reconciliation, replay UI, dan reporting aggregates adalah fase berikutnya. Jangan memperlakukan inventaris target jangka panjang sebagai daftar deliverable sebelum MVP selesai.
