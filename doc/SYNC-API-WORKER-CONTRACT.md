@@ -328,11 +328,18 @@ Update agregasi dari fakta `replica` setelah transaksi projection commit. Gunaka
 | cash_ledger | `cash.ledger.recorded` | entry + approval + source reference |
 | cash_deposit | `cash.deposit.recorded` | amount + expected + variance + actor/reason |
 | cash_handover | `cash.handover.confirmed` | from/to session/cashier + amount + variance |
-| customer | `customer.created`, `customer.updated` | canonical candidate data + local source ID |
+| customer | `customer.created`, `customer.updated` | customer data + local source ID; cloud auto-merges by normalized active phone number and returns canonical customer ID + alias mapping |
 | audit_event | `audit.recorded` | action/entity/actor/reason/before/after/correlation |
 | terminal | `terminal.status` | telemetry; preferably separate stream |
 
 Event names and exact payload JSON Schema must be versioned and finalized separately. A sale event should represent the final PAID aggregate; drafts and Hold Orders are not sent to cloud.
+
+
+### 10.1 Resolusi identitas pelanggan
+
+Cloud melakukan auto-merge jika nomor telepon aktif yang sudah dinormalisasi sama. Tidak ada antrean persetujuan manual untuk kasus ini. Respons/proses master sync mengembalikan canonical_customer_id dan pemetaan local_customer_id/alias agar toko dapat memperbarui referensi pelanggan secara konsisten.
+
+Proses merge harus atomik dan race-safe. ID canonical yang paling dahulu dibuat dipertahankan; ID lokal lain dicatat sebagai alias. Field canonical yang kosong boleh diisi dari record alias, tetapi nilai non-kosong yang bertentangan tidak saling menimpa otomatis dan dicatat untuk koreksi admin. Transaksi historis tetap menyimpan customer ID asal dan tidak ditulis ulang; lookup/reporting dapat mengikuti pemetaan canonical. Nomor kosong/tidak valid tidak digunakan untuk auto-merge.
 
 ## 11. Observability, security, dan operations
 
@@ -350,7 +357,7 @@ Event names and exact payload JSON Schema must be versioned and finalized separa
 1. Verifikasi parameter keamanan OAuth2 saat security review: masa hidup token 5 menit, pilihan final ES256 atau RS256, dan scope minimum per endpoint.
 2. Batas batch/payload dan timeout final berdasarkan load test.
 3. Event payload JSON Schema final dan daftar event mana yang wajib dikirim.
-4. Kebijakan customer merge saat nomor telepon konflik lintas toko.
+4. Detail teknis auto-merge: normalisasi nomor lintas negara, unique constraint, race handling, dan tampilan field konflik.
 5. Detail implementasi grant kuota: format/tanda tangan grant, DDL, fencing dan penutupan/re-alokasi, serta rekonsiliasi konsumsi.
 6. Detail bootstrap master snapshot dan pemulihan cursor kedaluwarsa.
 7. Apakah event audit lengkap atau subset audit yang dikirim ke cloud.
