@@ -514,6 +514,6 @@ Tahapan berikutnya:
 - `database/tests/004_refund_concurrency.py`: uji dua proses refund bersamaan.
 - `doc/DATABASE-BOUNDARIES-LOCAL-CLOUD.md`: batas kepemilikan data server toko dan cloud.
 
-**Status test CI:** migration 001–003, test 001–005, dan concurrency refund sebelumnya lulus pada GitHub Actions run 41139337931. Validasi migration 004 dan test 006–007 sedang berjalan pada branch `feature/sync-recovery-ordering`; belum boleh dianggap lulus sebelum run terbaru selesai.
+**Status test CI:** migration 001–003, test 001–005, dan concurrency refund sebelumnya lulus pada GitHub Actions run 41139337931. Migration 004 dan test 006–007 lulus pada GitHub Actions run [41150146313](https://github.com/bangpei-arch/POS/actions/runs/41150146313), PostgreSQL 16. Ini belum membuktikan penerapan pada database development lokal atau integrasi HTTP end-to-end.
 
-**Status lokal pengguna:** migration 003 dan test 001–005 serta refund concurrency telah dilaporkan lulus pada database development. Migration 004 belum diterapkan ke database lokal.
+**Status lokal pengguna:** migration 003 dan test 001–005 serta refund concurrency telah dilaporkan lulus pada database development. Migration 004 belum diterapkan ke database development lokal; perlu backup baru sebelum penerapan dan menjalankan test 001–007.
