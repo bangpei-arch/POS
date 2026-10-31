@@ -66,8 +66,11 @@ CREATE TABLE cloud.products (
     sku varchar(50) NOT NULL UNIQUE,
     product_name varchar(200) NOT NULL,
     barcode varchar(100),
+    tax_code varchar(30),
+    tax_rate numeric(7,4) NOT NULL DEFAULT 0,
     is_active boolean NOT NULL DEFAULT true,
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_cloud_products_tax_rate CHECK (tax_rate BETWEEN 0 AND 100)
 );
 CREATE UNIQUE INDEX uq_cloud_products_barcode
     ON cloud.products(barcode) WHERE barcode IS NOT NULL;
