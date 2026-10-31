@@ -240,7 +240,7 @@ CREATE INDEX ix_replica_audit_store_time ON replica.audit_events(source_store_id
 CREATE FUNCTION replica.assert_sale_complete(p_sale_id uuid)
 RETURNS void
 LANGUAGE plpgsql
-AS $
+AS $function$
 DECLARE
     v_grand_total numeric(18,2);
     v_line_total numeric(18,2);
@@ -274,7 +274,7 @@ BEGIN
             USING ERRCODE = '23514';
     END IF;
 END;
-$;
+$function$;
 
 CREATE VIEW reporting.v_sales AS
 SELECT s.source_store_id AS store_id, st.store_code, st.store_name,
