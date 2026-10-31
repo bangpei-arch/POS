@@ -10,7 +10,7 @@ def create_pool(dsn: str, min_size: int, max_size: int) -> ConnectionPool:
         conninfo=dsn,
         min_size=min_size,
         max_size=max_size,
-        kwargs={"row_factory": dict_row},
+        kwargs={"row_factory": dict_row, "options": "-c search_path=pos,public"},
         open=False,
     )
 
