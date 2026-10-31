@@ -38,7 +38,7 @@ Belum termasuk event receiver, reporting endpoint, store API, sender worker, ata
    python scripts/import_products.py master-products.csv
    ```
 
-   Format kolom: id,sku,name,barcode,price. Metode pembayaran CASH, TRANSFER, QRIS sudah di-seed migration.
+   Format kolom wajib: id,sku,name,price; kolom opsional: barcode,tax_code,tax_rate. Metode pembayaran CASH, TRANSFER, QRIS sudah di-seed migration.
 7. Jalankan:
 
    ```bash
