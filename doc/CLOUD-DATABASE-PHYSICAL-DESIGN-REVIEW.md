@@ -2,7 +2,7 @@
 
 **Review:** 1  
 **Tanggal:** 31 Oktober 2026  
-**Status:** Review 1 selesai; temuan struktur utama sudah diterapkan ke draft physical design v0.2. Beberapa detail akhir masih perlu review event contract dan audit policy.  
+**Status:** Review desain target selesai untuk memulai MVP. Full physical design tetap backlog; migration MVP sengaja memakai subset kecil. Validasi SQL dan integration test masih wajib sebelum deployment.  
 **Cakupan:** Physical design, inventory, logical cloud design, local/cloud boundary, dan sync contract.  
 **Tidak termasuk:** implementasi aplikasi, FastAPI, worker runtime, dan migration database toko.
 
@@ -108,3 +108,15 @@ Tabel baru `replica.source_entity_registry` dan `ingest.retention_actions` sudah
 5. Jalankan CI PostgreSQL 16, constraint tests, multi-store isolation, duplicate/replay, concurrency quota, retention, dan restore test.
 
 DDL belum boleh dipakai produksi sampai semua langkah tersebut lolos.
+
+
+## 9. Keputusan scope setelah review
+
+Pengguna menetapkan prioritas MVP: tidak mengejar desain sempurna atau semua fitur sekaligus. Hasil pertama harus satu siklus POS lengkap sampai cloud. Rekomendasi non-kritikal diterapkan tanpa pertanyaan berulang; hanya risiko kritikal yang dieskalasikan.
+
+- Audit menggunakan allowlist dan payload minim data.
+- Cloud receiver memproses sinkron dalam transaksi DB; Cloud Inbox Worker terpisah ditunda.
+- Bootstrap master snapshot penuh; incremental cursor dan stream ditunda.
+- Satu sale.paid event membawa header, lines, confirmed payments.
+- Cloud migration MVP terpisah, tidak menjalankan migration lokal 001–004.
+- Semua detail fitur lanjutan tetap backlog, bukan penghalang MVP.
