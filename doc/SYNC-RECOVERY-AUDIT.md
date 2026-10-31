@@ -132,7 +132,7 @@ Test database/integrasi berikut harus tersedia:
 
 ## 6. Status implementasi database
 
-Migration lokal `004_sync_recovery_ordering.sql` disiapkan pada branch `feature/sync-recovery-ordering`. Perubahan mencakup:
+Migration lokal `004_sync_recovery_ordering.sql` dan regression tests telah lulus GitHub Actions pada PostgreSQL 16, run [41150146313](https://github.com/bangpei-arch/POS/actions/runs/41150146313), commit `32d53fa90010ffe3f681a4dfcf1a7ff54d62dce6`. Perubahan mencakup:
 - Aggregate version counter dan unique ordering pada outbox.
 - Claim outbox/inbox/inventory dengan `SKIP LOCKED`, lease, dan fencing token.
 - ACK/failure hanya diterima untuk claim token aktif dan lease yang belum habis.
@@ -147,8 +147,8 @@ Test baru:
 
 Workflow CI diperluas untuk menjalankan migration 004 dan kedua test tersebut setelah migration/test lama.
 
-**Batas penting:** migration dan test ini belum membuktikan HTTP API end-to-end, commit efek bisnis pada receiver, atau pemulihan worker runtime. Itu membutuhkan service/API implementation dan integration test terpisah.
+**Batas penting:** CI membuktikan migration dan test database pada PostgreSQL 16. Migration 004 belum diterapkan pada database development lokal pengguna. Test ini juga belum membuktikan HTTP API end-to-end, commit efek bisnis pada receiver, atau pemulihan worker runtime; itu membutuhkan service/API implementation dan integration test terpisah.
 
 ## 7. Batas kesimpulan
 
-Lima test database lokal yang dilaporkan lulus pada 31 Oktober 2026 membuktikan schema smoke, katalog/integritas, integrity guards, refund concurrency, dan transaction finality. Migration 004 dan test 006–007 masih harus lulus CI dan diuji pada database development lokal sebelum dapat disebut tervalidasi. Tidak ada klaim bahwa worker/API end-to-end telah dibuat atau diuji.
+Lima test database lokal yang dilaporkan lulus pada 31 Oktober 2026 membuktikan schema smoke, katalog/integritas, integrity guards, refund concurrency, dan transaction finality. Migration 004 dan test 006–007 telah lulus CI pada run 41150146313. Penerapan dan test pada database development lokal masih menunggu. Tidak ada klaim bahwa worker/API end-to-end telah dibuat atau diuji.
