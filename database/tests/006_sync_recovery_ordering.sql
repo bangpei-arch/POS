@@ -8,7 +8,9 @@ DO $$
 DECLARE
   v_node uuid;
   v_node2 uuid;
+  v_actor uuid;
   v_aggregate uuid := gen_random_uuid();
+  v_aggregate2 uuid := gen_random_uuid();
   v_event1 uuid := gen_random_uuid();
   v_event2 uuid := gen_random_uuid();
   v_event3 uuid := gen_random_uuid();
@@ -26,6 +28,8 @@ BEGIN
   VALUES ('central', 'SYNC004-NODE-1') RETURNING id INTO v_node;
   INSERT INTO sync_nodes(node_type, node_code)
   VALUES ('central', 'SYNC004-NODE-2') RETURNING id INTO v_node2;
+  INSERT INTO iam_users(employee_code,full_name,pin_hash)
+  VALUES ('SYNC004-ADMIN','Sync Test Admin','test-only') RETURNING id INTO v_actor;
 
   -- Trigger allocates monotonically increasing aggregate versions.
   INSERT INTO sync_outbox(node_id,event_id,aggregate_type,aggregate_id,event_type,payload)
@@ -86,6 +90,20 @@ BEGIN
   IF v_claim.id IS NOT NULL THEN
     RAISE EXCEPTION 'Later aggregate event bypassed a failed predecessor';
   END IF;
+  IF NOT replay_failed_sync_outbox(
+    (SELECT id FROM sync_outbox WHERE event_id=v_event3),v_actor,'Retry after receiver fix'
+  ) THEN
+    RAISE EXCEPTION 'Audited outbox replay failed';
+  END IF;
+  SELECT * INTO v_claim FROM claim_sync_outbox('worker-A',1,120);
+  IF v_claim.event_id <> v_event3 OR NOT ack_sync_outbox(v_claim.id,v_claim.claim_token,200,'{"replayed":true}') THEN
+    RAISE EXCEPTION 'Replayed outbox event did not send successfully';
+  END IF;
+  SELECT * INTO v_claim FROM claim_sync_outbox('worker-A',1,120);
+  IF v_claim.event_id <> v_event4 THEN
+    RAISE EXCEPTION 'Later aggregate version did not resume after replay ACK';
+  END IF;
+  PERFORM ack_sync_outbox(v_claim.id,v_claim.claim_token,200,'{"ack":true}');
 
   -- Inbox ordering: version 2 may arrive first but cannot be claimed before 1.
   INSERT INTO sync_inbox(
@@ -114,6 +132,30 @@ BEGIN
     RAISE EXCEPTION 'Inbox version 2 completion failed';
   END IF;
 
+  -- Permanent inbox rejection blocks the aggregate until an audited skip.
+  INSERT INTO sync_inbox(
+    source_node_id,event_id,idempotency_key,aggregate_type,aggregate_id,aggregate_version
+  ) VALUES
+    (v_node,gen_random_uuid(),'skip-v1','refund',v_aggregate2,1),
+    (v_node,gen_random_uuid(),'skip-v2','refund',v_aggregate2,2);
+  SELECT * INTO v_inbox_claim FROM claim_sync_inbox('inbox-worker',10,120);
+  IF v_inbox_claim.aggregate_id <> v_aggregate2 OR v_inbox_claim.aggregate_version <> 1 THEN
+    RAISE EXCEPTION 'Expected first version of skip-test aggregate';
+  END IF;
+  IF NOT fail_sync_inbox(v_inbox_claim.id,v_inbox_claim.claim_token,'permanent reject',NULL,true) THEN
+    RAISE EXCEPTION 'Permanent inbox rejection failed';
+  END IF;
+  IF NOT resolve_sync_inbox(v_inbox_claim.id,v_actor,'skip','Confirmed invalid event; skip with approval') THEN
+    RAISE EXCEPTION 'Audited inbox skip failed';
+  END IF;
+  SELECT * INTO v_inbox_claim FROM claim_sync_inbox('inbox-worker',10,120);
+  IF v_inbox_claim.aggregate_id <> v_aggregate2 OR v_inbox_claim.aggregate_version <> 2 THEN
+    RAISE EXCEPTION 'Inbox next version did not resume after audited skip';
+  END IF;
+  IF NOT complete_sync_inbox(v_inbox_claim.id,v_inbox_claim.claim_token,'{"accepted":true}') THEN
+    RAISE EXCEPTION 'Inbox version after audited skip did not complete';
+  END IF;
+
   -- Inventory integration queue also recovers a crashed sender using fencing.
   INSERT INTO sync_inventory_events(
     source_type,source_id,event_type,payload,idempotency_key
@@ -135,7 +177,7 @@ BEGIN
     RAISE EXCEPTION 'Inventory event ACK failed after lease recovery';
   END IF;
 
-  RAISE NOTICE 'SYNC RECOVERY PASS: aggregate ordering, expired lease recovery, stale ACK fencing, failed-event blocking, inbox ordering/idempotency, inventory lease';
+  RAISE NOTICE 'SYNC RECOVERY PASS: aggregate ordering, expired lease recovery, stale ACK fencing, audited replay/skip, inbox ordering/idempotency, inventory lease';
 END;
 $$;
 
