@@ -1,6 +1,8 @@
 import base64
 import os
+import sys
 import uuid
+from pathlib import Path
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -10,6 +12,8 @@ from argon2 import PasswordHasher
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import get_settings
 from app.main import app
