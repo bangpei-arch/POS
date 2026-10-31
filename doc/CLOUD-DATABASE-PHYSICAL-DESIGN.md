@@ -267,6 +267,13 @@ Notasi spesifikasi per tabel:
 - CK action IN ('replay','skip','close_dead_letter'); result IN ('requested','succeeded','failed'); length(trim(reason)) > 0; approval_user_id IS NULL OR approval_user_id <> actor_user_id.
 - IX `(received_event_id,created_at DESC)`; `(actor_user_id,created_at DESC)`.
 
+#### `ingest.retention_actions`
+- Kolom: `id uuid`; `target_type varchar(40)`; `target_id uuid`; `action varchar(30)`; `actor_type varchar(30)`; `actor_user_id uuid?`; `reason text`; `metadata jsonb DEFAULT '{}'`; `executed_at timestamptz`; `result varchar(20)`.
+- PK id. FK actor_user_id → cloud.users.
+- CK action IN ('payload_purge','dead_letter_purge','metadata_purge'); actor_type IN ('user','retention_job','system'); result IN ('succeeded','failed','skipped'); length(trim(reason)) > 0.
+- IX `(target_type,target_id,executed_at DESC)`; `(executed_at DESC)`.
+- Retention job wajib mencatat setiap purge termasuk target, aturan retensi, jumlah byte/row, dan legal-hold check. Record audit tidak ikut dihapus oleh job yang dicatatnya.
+
 #### `ingest.node_sync_status`
 - Kolom: `node_id uuid`; `stream_name varchar(60)`; `pending_count bigint DEFAULT 0`; `failed_count bigint DEFAULT 0`; `oldest_pending_at timestamptz?`; `last_received_at timestamptz?`; `last_processed_at timestamptz?`; `last_error_code varchar(60)?`; `updated_at timestamptz`.
 - PK `(node_id,stream_name)`. FK node_id → sync_nodes. CK pending_count >= 0; failed_count >= 0.
