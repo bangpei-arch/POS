@@ -41,8 +41,9 @@ Database hanya bind ke localhost port 55433 dan memakai volume khusus `bakery_po
 ## 3. Terapkan migrasi local-store 001–005
 
 ```bash
+set -e
 for migration in 001_initial_schema.sql 002_integrity_guards.sql 003_transaction_finality.sql 004_sync_recovery_ordering.sql 005_mvp_pos_fields.sql; do
-  docker exec -i bakery-pos-store-mvp-test-db psql -v ON_ERROR_STOP=1 -U pos_mvp_test -d pos_mvp_test < "database/migrations/$migration" || break
+  docker exec -i bakery-pos-store-mvp-test-db psql -v ON_ERROR_STOP=1 -U pos_mvp_test -d pos_mvp_test < "database/migrations/$migration"
 done
 ```
 
