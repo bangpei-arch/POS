@@ -169,7 +169,7 @@ Notasi spesifikasi per tabel:
 
 #### `cloud.promotion_quota_allocations`
 - Kolom: `id uuid`; `promotion_id uuid`; `store_id uuid`; `allocated_quantity bigint`; `consumed_quantity bigint DEFAULT 0`; `valid_from timestamptz`; `valid_until timestamptz`; `allocation_version bigint DEFAULT 1`; `grant_digest bytea`; `status varchar(20) DEFAULT 'active'`; `closed_at timestamptz?`; `created_at timestamptz`; `updated_at timestamptz`.
-- PK id. FK promotion_id → promotions; store_id → stores. CK allocated_quantity >= 0; consumed_quantity BETWEEN 0 AND allocated_quantity; valid_until > valid_from; allocation_version > 0; status IN ('active','closed','expired','revoked'); closed_at IS NULL OR status <> 'active'.
+- PK id. FK promotion_id → promotions; store_id → stores. UQ `(id,store_id,promotion_id)` for consumption FK. CK allocated_quantity >= 0; consumed_quantity BETWEEN 0 AND allocated_quantity; valid_until > valid_from; allocation_version > 0; status IN ('active','closed','expired','revoked'); closed_at IS NULL OR status <> 'active'.
 - IX `(promotion_id,store_id,status)`; `(store_id,valid_until)`. Allocation totals/remaining must be updated under row lock in the same transaction; global cap is cross-row invariant enforced by service transaction/locking, not CHECK.
 
 #### `cloud.manual_discount_limits`
@@ -244,8 +244,8 @@ Notasi spesifikasi per tabel:
 ## 3. Schema ingest
 
 #### `ingest.event_idempotency_registry`
-- Kolom: `id uuid`; `source_node_id uuid`; `event_id uuid`; `idempotency_key varchar(140)`; `aggregate_type varchar(60)`; `aggregate_id uuid`; `aggregate_version bigint`; `payload_sha256 bytea`; `received_event_id uuid?`; `first_seen_at timestamptz`; `final_status varchar(20)?`.
-- PK id. FK source_node_id → cloud.sync_nodes; received_event_id → received_events (deferred FK or add after table creation). UQ `(source_node_id,event_id)`; UQ `(source_node_id,idempotency_key)`; UQ `(source_node_id,aggregate_type,aggregate_id,aggregate_version)`.
+- Kolom: `id uuid`; `source_node_id uuid`; `event_id uuid`; `idempotency_key varchar(140)`; `aggregate_type varchar(60)`; `aggregate_id uuid`; `aggregate_version bigint`; `payload_sha256 bytea`; `first_seen_at timestamptz`; `final_status varchar(20)?`.
+- PK id. FK `(source_node_id,event_id)` → received_events `(source_node_id,event_id)`. UQ `(source_node_id,event_id)`; UQ `(source_node_id,idempotency_key)`; UQ `(source_node_id,aggregate_type,aggregate_id,aggregate_version)`.
 - CK aggregate_version > 0; octet_length(payload_sha256)=32; final_status IN ('processed','rejected','dead_letter') OR NULL.
 - IX `(source_node_id,first_seen_at)`. Non-partitioned; retained as long as duplicate prevention is required, even after raw payload expiry.
 
@@ -297,7 +297,7 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.sales`
 - Kolom: `id uuid`; kolom asal di atas; `source_cashier_id uuid`; `source_terminal_id uuid`; `source_customer_id uuid?`; `receipt_number varchar(80)`; `business_date date`; `currency_code char(3)`; `subtotal numeric(18,2)`; `discount_total numeric(18,2)`; `tax_total numeric(18,2)`; `rounding_amount numeric(18,2)`; `grand_total numeric(18,2)`; `paid_at timestamptz`; `payload_schema_version integer`.
-- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`; UQ `(source_store_id,receipt_number)`; UQ `(id,source_store_id)`.
+- PK id. FK `(source_node_id,source_store_id)` → sync_nodes `(id,store_id)`. UQ `(source_store_id,source_entity_id)`; UQ `(source_store_id,receipt_number)`; UQ `(id,source_store_id)`.
 - CK all totals except rounding >= 0; grand_total >= 0; currency uppercase; payload_schema_version > 0.
 - IX `(source_store_id,business_date,paid_at)`; `(source_store_id,source_cashier_id,paid_at DESC)`; `(source_store_id,source_customer_id,business_date)`; BRIN received_at.
 - PAID-only: no status column required; row existence means paid. Immutable after insert. Partition by business_date only after volume; unique source IDs then enforced via non-partitioned registry.
@@ -339,10 +339,10 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.refunds`
 - Kolom: `id uuid`; kolom asal di atas; `source_original_sale_id uuid`; `source_processed_by_user_id uuid`; `reason text`; `total_amount numeric(18,2)`; `completed_at timestamptz`; `refund_method_code_snapshot varchar(30)`.
-- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(source_node_id,source_store_id)` → sync_nodes `(id,store_id)`. UQ `(source_store_id,source_entity_id)`; UQ `(id,source_store_id)`.
 - CK total_amount > 0; length(trim(reason)) > 0.
 - IX `(source_store_id,source_original_sale_id)`; `(source_store_id,completed_at DESC)`.
-- Original sale is a cross-event dependency: resolve by source store + source sale ID; do not FK to local UUID alone.
+- Original sale is a cross-event dependency: before projection, resolve source sale through `replica.source_entity_registry` with `entity_type='sale'`, `source_store_id`, and `source_entity_id`; hold event deferred until present. Refund line source sale-line IDs resolve with `entity_type='sale_line'`.
 
 #### `replica.refund_lines`
 - Kolom: `id uuid`; `refund_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `source_original_sale_line_id uuid`; `sku_snapshot varchar(50)`; `name_snapshot varchar(200)`; `quantity integer`; `refund_amount numeric(18,2)`; `item_received boolean`; `item_resalable boolean`; `stock_return_eligible boolean`.
@@ -364,7 +364,7 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.cash_ledger_entries`
 - Kolom: `id uuid`; `source_store_id uuid`; `source_node_id uuid`; `source_entity_id uuid`; `source_drawer_id uuid`; `source_session_id uuid?`; `entry_type varchar(30)`; `direction varchar(3)`; `amount numeric(18,2)`; `source_type varchar(40)?`; `source_id uuid?`; `idempotency_key varchar(140)?`; `actor_source_user_id uuid`; `approved_by_source_user_id uuid?`; `reason text?`; `occurred_at timestamptz`; `received_at timestamptz`.
-- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`; UQ `(source_store_id,idempotency_key)` (partial when non-NULL).
+- PK id. FK `(source_node_id,source_store_id)` → sync_nodes `(id,store_id)`. UQ `(source_store_id,source_entity_id)`; partial UQ `(source_store_id,idempotency_key) WHERE idempotency_key IS NOT NULL.
 - CK direction IN ('in','out'); amount > 0.
 - IX `(source_store_id,source_drawer_id,occurred_at)`; `(source_store_id,source_session_id,occurred_at)`.
 
