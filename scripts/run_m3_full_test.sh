@@ -142,7 +142,7 @@ PROVISION_JSON="$(
     --store-code "$STORE_CODE" --store-name "Disposable M3 E2E Test" \
     --node-code "$CLOUD_NODE_CODE" --store-id "$STORE_ID" --node-id "$NODE_ID"
 )" || fail "Provision node Cloud gagal."
-IFS=$'\t' read -r CLIENT_ID CLIENT_SECRET <<< "$("$CLOUD_PY" -c 'import json,sys; d=json.load(sys.stdin); print(d["client_id"]+"\\t"+d["client_secret"])' <<< "$PROVISION_JSON")"
+IFS=$'\t' read -r CLIENT_ID CLIENT_SECRET <<< "$("$CLOUD_PY" -c 'import json,sys; d=json.load(sys.stdin); print(d["client_id"]+chr(9)+d["client_secret"])' <<< "$PROVISION_JSON")"
 [[ -n "$CLIENT_ID" && -n "$CLIENT_SECRET" ]] || fail "Kredensial Cloud test gagal dibaca."
 
 echo
