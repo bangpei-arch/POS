@@ -34,17 +34,17 @@ Notasi spesifikasi per tabel:
 
 #### `cloud.store_servers`
 - Kolom: `id uuid`; `store_id uuid`; `server_code varchar(40)`; `display_name varchar(120)?`; `status varchar(20) DEFAULT 'provisioning'`; `app_version varchar(40)?`; `registered_at timestamptz`; `disabled_at timestamptz?`; `created_at timestamptz`; `updated_at timestamptz`.
-- PK: `id`. FK: store_id → stores. UQ: `(store_id,server_code)`. CK: status IN ('provisioning','active','disabled','retired'); disabled_at IS NULL OR disabled_at >= registered_at.
-- IX: `(store_id,status)`; partial unique active server per store only if the deployment policy guarantees exactly one active server: `UNIQUE(store_id) WHERE status='active'`. Default design permits controlled replacement overlap during migration.
+- PK: `id`. FK: store_id → stores. UQ: `(store_id,server_code)`. CK: status IN ('provisioning','active','draining','disabled','retired'); disabled_at IS NULL OR disabled_at >= registered_at.
+- IX: `(store_id,status)`; partial UQ `(store_id) WHERE status='active'`. Saat penggantian, server lama menjadi `draining`; server baru menjadi satu-satunya `active` setelah fencing/transfer selesai.
 
 #### `cloud.terminals`
 - Kolom: `id uuid`; `store_id uuid`; `terminal_code varchar(30)`; `name varchar(100)?`; `primary_user_id uuid?`; `app_version varchar(40)?`; `status varchar(20) DEFAULT 'active'`; `disabled_at timestamptz?`; `created_at timestamptz`; `updated_at timestamptz`.
-- PK id. FK store_id → stores; primary_user_id → users. UQ `(store_id,terminal_code)`. CK status IN ('active','disabled','retired').
+- PK id. FK store_id → stores; primary_user_id → users. UQ `(store_id,terminal_code)` dan `(id,store_id)` untuk FK kepemilikan node. CK status IN ('active','disabled','retired').
 - IX `(store_id,status)`.
 
 #### `cloud.sync_nodes`
 - Kolom: `id uuid`; `node_code varchar(60)`; `node_type varchar(20)`; `store_id uuid?`; `store_server_id uuid?`; `terminal_id uuid?`; `status varchar(20) DEFAULT 'unknown'`; `created_at timestamptz`; `updated_at timestamptz`.
-- PK id. FK store_id → stores; store_server_id → store_servers; terminal_id → terminals. UQ node_code; UQ store_server_id (nullable).
+- PK id. FK `(store_server_id,store_id)` → store_servers `(id,store_id)`; `(terminal_id,store_id)` → terminals `(id,store_id)`. UQ node_code; UQ store_server_id (nullable); UQ terminal_id (nullable); UQ `(id,store_id)`.
 - CK node_type IN ('store_server','terminal','cloud_service') and ownership shape: store_server requires store_id + store_server_id and no terminal_id; terminal requires store_id + terminal_id and no store_server_id; cloud_service requires all ownership refs NULL.
 - IX `(store_id,node_type,status)`.
 
@@ -63,9 +63,15 @@ Notasi spesifikasi per tabel:
 ### 2.2 IAM
 
 #### `cloud.users`
-- Kolom: `id uuid`; `employee_code varchar(40)`; `full_name varchar(160)`; `status varchar(20) DEFAULT 'active'`; `failed_pin_attempts smallint DEFAULT 0`; `locked_until timestamptz?`; `created_at timestamptz`; `updated_at timestamptz`.
-- PK id. UQ employee_code. CK status IN ('active','locked','inactive'); failed_pin_attempts BETWEEN 0 AND 5.
+- Kolom: `id uuid`; `employee_code varchar(40)`; `full_name varchar(160)`; `status varchar(20) DEFAULT 'active'`; `created_at timestamptz`; `updated_at timestamptz`.
+- PK id. UQ employee_code. CK status IN ('active','locked','inactive').
 - IX `(status,employee_code)`. PIN hash disimpan pada credential/auth service atau field terpisah yang terenkripsi/terproteksi; jangan kirim PIN plaintext ke toko.
+
+#### `cloud.user_pin_credentials`
+- Kolom: `id uuid`; `user_id uuid`; `pin_hash text`; `hash_algorithm varchar(20) DEFAULT 'argon2id'`; `credential_version integer DEFAULT 1`; `valid_from timestamptz`; `valid_until timestamptz?`; `revoked_at timestamptz?`; `updated_by uuid?`; `created_at timestamptz`.
+- PK id. FK user_id → users; updated_by → users. UQ `(user_id,credential_version)`; partial UQ `(user_id) WHERE revoked_at IS NULL AND valid_until IS NULL`.
+- CK hash_algorithm='argon2id'; length(pin_hash)>=20; credential_version>0; valid_until IS NULL OR valid_until>valid_from; revoked_at IS NULL OR revoked_at>=valid_from.
+- IX `(user_id,valid_from DESC)`. PIN plaintext tidak disimpan atau dikirim. Hash hanya didistribusikan dalam master package terenkripsi; cache offline maksimal 24 jam.
 
 #### `cloud.roles`
 - Kolom: `id uuid`; `code varchar(30)`; `name varchar(80)`; `description text?`; `is_system boolean DEFAULT false`; `created_at timestamptz`.
@@ -118,12 +124,12 @@ Notasi spesifikasi per tabel:
 #### `cloud.product_prices`
 - Kolom: `id uuid`; `product_id uuid`; `price numeric(18,2)`; `valid_from timestamptz`; `valid_until timestamptz?`; `version bigint`; `created_by uuid?`; `created_at timestamptz`.
 - PK id. FK product_id → products; created_by → users. UQ `(product_id,version)`. CK price >= 0; valid_until IS NULL OR valid_until > valid_from; version > 0.
-- IX `(product_id,valid_from DESC)`. Overlap prevention for effective ranges requires exclusion constraint on `(product_id WITH =, tstzrange(valid_from,valid_until,'[)') WITH &&)` using btree_gist; extension approval required. If extension is not approved, serialize price publication per product and validate overlap in transaction.
+- IX `(product_id,valid_from DESC)`. No-overlap dijaga dengan lock parent `products` row `FOR UPDATE`, check overlap, dan insert/update range dalam transaksi yang sama. Tidak membutuhkan extension `btree_gist`.
 
 #### `cloud.product_tax_rules`
 - Kolom: `id uuid`; `product_id uuid`; `tax_code varchar(30)`; `tax_rate numeric(7,4)`; `valid_from timestamptz`; `valid_until timestamptz?`; `version bigint`; `created_at timestamptz`.
 - PK id. FK product_id → products. UQ `(product_id,tax_code,version)`. CK tax_rate BETWEEN 0 AND 100; valid_until IS NULL OR valid_until > valid_from; version > 0.
-- IX `(product_id,tax_code,valid_from DESC)`; overlap prevention same method as product_prices.
+- IX `(product_id,tax_code,valid_from DESC)`. No-overlap per `(product_id,tax_code)` dijaga dengan lock parent product dan validasi range dalam satu transaksi. Tidak membutuhkan extension.
 
 #### `cloud.product_store_availability`
 - Kolom: `id uuid`; `product_id uuid`; `store_id uuid`; `is_available boolean DEFAULT true`; `reason text?`; `updated_at timestamptz`.
@@ -166,6 +172,11 @@ Notasi spesifikasi per tabel:
 - PK id. FK promotion_id → promotions; store_id → stores. CK allocated_quantity >= 0; consumed_quantity BETWEEN 0 AND allocated_quantity; valid_until > valid_from; allocation_version > 0; status IN ('active','closed','expired','revoked'); closed_at IS NULL OR status <> 'active'.
 - IX `(promotion_id,store_id,status)`; `(store_id,valid_until)`. Allocation totals/remaining must be updated under row lock in the same transaction; global cap is cross-row invariant enforced by service transaction/locking, not CHECK.
 
+#### `cloud.manual_discount_limits`
+- Kolom: `id uuid`; `store_id uuid?`; `role_id uuid?`; `supervisor_user_id uuid?`; `max_percent numeric(7,4) DEFAULT 0`; `max_amount numeric(18,2) DEFAULT 0`; `valid_from timestamptz`; `valid_until timestamptz?`; `version bigint DEFAULT 1`; `created_by uuid?`; `created_at timestamptz`; `updated_at timestamptz`.
+- PK id. FK store_id → stores; role_id → roles; supervisor_user_id/created_by → users. CK at least one of role_id/supervisor_user_id; max_percent BETWEEN 0 AND 100; max_amount >= 0; valid_until IS NULL OR valid_until > valid_from; version > 0.
+- IX `(store_id,role_id,valid_from DESC)`; `(supervisor_user_id,valid_from DESC)`. Effective overlap prevention transactional under scope lock.
+
 #### `cloud.payment_methods`
 - Kolom: `id uuid`; `code varchar(30)`; `name varchar(80)`; `method_type varchar(30)`; `requires_reference boolean DEFAULT false`; `is_cash boolean DEFAULT false`; `is_active boolean DEFAULT true`; `version bigint DEFAULT 1`; `created_at timestamptz`; `updated_at timestamptz`.
 - PK id. UQ code. CK version > 0; is_cash implies method_type='cash'.
@@ -188,7 +199,7 @@ Notasi spesifikasi per tabel:
 #### `cloud.receipt_policies`
 - Kolom: `id uuid`; `store_id uuid`; `max_reprints integer DEFAULT 2`; `auto_print boolean DEFAULT true`; `paper_width_mm smallint DEFAULT 80`; `valid_from timestamptz`; `valid_until timestamptz?`; `created_at timestamptz`.
 - PK id. FK store_id → stores. CK max_reprints >= 0; paper_width_mm IN (58,80); valid_until IS NULL OR valid_until > valid_from.
-- IX `(store_id,valid_from DESC)`; partial unique current policy per store may be enforced by service/exclusion range.
+- IX `(store_id,valid_from DESC)`; partial UQ `(store_id) WHERE is_active`. Perubahan policy mengunci store row, menutup policy lama, lalu insert policy baru secara atomik.
 
 ### 2.5 Pelanggan canonical
 
@@ -211,9 +222,9 @@ Notasi spesifikasi per tabel:
 ### 2.6 Distribusi master
 
 #### `cloud.master_change_log`
-- Kolom: `change_seq bigint`; `entity_type varchar(60)`; `entity_id uuid`; `entity_version bigint`; `operation varchar(20)`; `target_store_id uuid?`; `effective_at timestamptz`; `payload jsonb`; `published_at timestamptz DEFAULT now()`.
-- PK change_seq. FK target_store_id → stores. UQ `(entity_type,entity_id,entity_version,target_store_id)` perlu NULL-safe handling (gunakan dua partial unique index atau NULLS NOT DISTINCT PostgreSQL 15+).
-- CK entity_version > 0; operation IN ('upsert','deactivate'); payload IS JSON object.
+- Kolom: `change_seq bigint`; `entity_type varchar(60)`; `entity_id uuid`; `entity_version bigint`; `operation varchar(20)`; `target_store_id uuid?`; `effective_at timestamptz`; `payload_schema_version integer`; `payload jsonb`; `published_at timestamptz DEFAULT now()`.
+- PK change_seq. FK target_store_id → stores. UQ NULL-safe `(entity_type,entity_id,entity_version,target_store_id) NULLS NOT DISTINCT` (PostgreSQL 16).
+- CK entity_version > 0; payload_schema_version > 0; operation IN ('upsert','deactivate'); jsonb_typeof(payload)='object'.
 - IX `(target_store_id,change_seq)`; `(change_seq)`. Global stream counter row lock + log insert + master mutation must commit in one transaction.
 
 #### `cloud.master_stream_counter`
@@ -246,10 +257,10 @@ Notasi spesifikasi per tabel:
 
 #### `ingest.received_events`
 - Kolom: `id uuid`; `source_node_id uuid`; `source_store_id uuid`; `event_id uuid`; `idempotency_key varchar(140)`; `aggregate_type varchar(60)`; `aggregate_id uuid`; `aggregate_version bigint`; `event_type varchar(80)`; `schema_version integer`; `occurred_at timestamptz`; `correlation_id uuid?`; `payload_sha256 bytea`; `payload jsonb?`; `status varchar(20) DEFAULT 'received'`; `received_at timestamptz`; `processed_at timestamptz?`; `next_retry_at timestamptz?`; `dead_lettered_at timestamptz?`; `last_error_code varchar(60)?`; `last_error text?`.
-- PK id. FK source_node_id → sync_nodes; source_store_id → stores. Registry relation by registry.received_event_id → id (circular relation finalized after both tables exist).
+- PK id. FK `(source_node_id,source_store_id)` → cloud.sync_nodes `(id,store_id)`. UQ `(source_node_id,event_id)`. Registry mereferensikan event melalui `(source_node_id,event_id)`; buat received_events lebih dahulu. Tabel ini tidak dipartisi pada migration awal karena child FK memerlukan kunci stabil.
 - CK aggregate_version > 0; schema_version > 0; octet_length(payload_sha256)=32; status IN ('received','processing','deferred','processed','rejected','dead_letter'); payload IS NULL OR jsonb_typeof(payload)='object'.
 - IX `(status,next_retry_at,received_at)`; `(source_node_id,aggregate_type,aggregate_id,aggregate_version)`; BRIN `(received_at)`.
-- Partition candidate by received_at month. Keep registry non-partitioned. For processed event after 90 days, payload can be nulled/deleted but compact envelope/hash/status remains as long as operational dedupe requires. Dead-letter payload retention rule remains until resolution + 1 year.
+- Jangan partisi pada migration awal. Setelah 90 hari, payload processed dapat dihapus/null, tetapi envelope/hash/status dan registry dipertahankan sesuai retensi dedupe. Dead-letter payload disimpan sampai diselesaikan + minimal 1 tahun. Partisi hanya setelah FK dan load design direvisi.
 
 #### `ingest.aggregate_cursors`
 - Kolom: `source_node_id uuid`; `aggregate_type varchar(60)`; `aggregate_id uuid`; `last_processed_version bigint DEFAULT 0`; `last_event_id uuid?`; `updated_at timestamptz`.
@@ -282,31 +293,37 @@ Notasi spesifikasi per tabel:
 ## 4. Schema replica
 
 ### 4.1 Konvensi fakta transaksi
-Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_node_id uuid NOT NULL`, `source_entity_id uuid NOT NULL`, `source_created_at timestamptz NOT NULL`, `received_at timestamptz NOT NULL DEFAULT now()`. FK ke stores dan sync_nodes. Unique identitas asal menggunakan `(source_store_id,source_entity_id)` pada tabel header. Detail memakai `source_entity_id` unik per store bila ID asal tersedia. Snapshot transaksi tidak FK ke master produk/user agar histori tetap utuh walau master berubah; gunakan source IDs dan snapshot code/name.
+Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_node_id uuid NOT NULL`, `source_entity_id uuid NOT NULL`, `source_created_at timestamptz NOT NULL`, `received_at timestamptz NOT NULL DEFAULT now()`. FK komposit `(source_node_id,source_store_id)` ke `cloud.sync_nodes(id,store_id)` memastikan node berasal dari toko yang sama. Unique identitas asal menggunakan `(source_store_id,source_entity_id)` pada tabel header. Detail memakai `source_entity_id` unik per store bila ID asal tersedia. Snapshot transaksi tidak FK ke master produk/user agar histori tetap utuh walau master berubah; gunakan source IDs dan snapshot code/name.
 
 #### `replica.sales`
 - Kolom: `id uuid`; kolom asal di atas; `source_cashier_id uuid`; `source_terminal_id uuid`; `source_customer_id uuid?`; `receipt_number varchar(80)`; `business_date date`; `currency_code char(3)`; `subtotal numeric(18,2)`; `discount_total numeric(18,2)`; `tax_total numeric(18,2)`; `rounding_amount numeric(18,2)`; `grand_total numeric(18,2)`; `paid_at timestamptz`; `payload_schema_version integer`.
-- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`; UQ `(source_store_id,receipt_number)`.
+- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`; UQ `(source_store_id,receipt_number)`; UQ `(id,source_store_id)`.
 - CK all totals except rounding >= 0; grand_total >= 0; currency uppercase; payload_schema_version > 0.
 - IX `(source_store_id,business_date,paid_at)`; `(source_store_id,source_cashier_id,paid_at DESC)`; `(source_store_id,source_customer_id,business_date)`; BRIN received_at.
 - PAID-only: no status column required; row existence means paid. Immutable after insert. Partition by business_date only after volume; unique source IDs then enforced via non-partitioned registry.
 
 #### `replica.sale_lines`
 - Kolom: `id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `source_product_id uuid?`; `sku_snapshot varchar(50)`; `name_snapshot varchar(200)`; `barcode_snapshot varchar(100)?`; `quantity integer`; `unit_price numeric(18,2)`; `gross_amount numeric(18,2)`; `discount_amount numeric(18,2)`; `taxable_base numeric(18,2)`; `tax_code_snapshot varchar(30)?`; `tax_rate_snapshot numeric(7,4)`; `tax_amount numeric(18,2)`; `line_total numeric(18,2)`; `price_version bigint?`; `tax_version bigint?`; `promotion_snapshot jsonb?`.
-- PK id. FK sale_id → sales. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`. UQ `(source_store_id,source_entity_id)`.
 - CK quantity > 0; all money >= 0; tax_rate BETWEEN 0 AND 100; price_version/tax_version > 0 OR NULL.
 - IX `(sale_id)`; `(source_store_id,source_product_id)`; `(source_store_id,sku_snapshot)`.
 
 #### `replica.sale_discounts`
-- Kolom: `id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `source_sale_line_id uuid?`; `discount_type varchar(30)`; `amount numeric(18,2)`; `source varchar(20)`; `promotion_id uuid?`; `applied_by_source_user_id uuid?`; `reason text?`.
-- PK id. FK sale_id → sales; sale_line_id → sale_lines. UQ `(source_store_id,source_entity_id)`.
+- Kolom: `id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `sale_line_id uuid?`; `source_sale_line_id uuid?`; `discount_type varchar(30)`; `amount numeric(18,2)`; `source varchar(20)`; `promotion_id uuid?`; `applied_by_source_user_id uuid?`; `reason text?`.
+- PK id. FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`; sale_line_id → sale_lines(id). UQ `(source_store_id,source_entity_id)`.
 - CK amount >= 0; source IN ('promotion','manual').
 - IX `(sale_id)`; `(promotion_id)`.
 
 #### `replica.sale_promotion_cancellations`
 - Kolom: `id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `promotion_id uuid`; `reason text`; `cancelled_by_source_user_id uuid`; `cancelled_at timestamptz`.
-- PK id. FK sale_id → sales. UQ `(source_store_id,source_entity_id)`. CK length(trim(reason)) > 0.
+- PK id. FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`. UQ `(source_store_id,source_entity_id)`. CK length(trim(reason)) > 0.
 - IX `(sale_id)`; `(promotion_id,cancelled_at)`.
+
+#### `replica.promotion_quota_consumptions`
+- Kolom: `id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `promotion_id uuid`; `allocation_id uuid`; `consumed_quantity bigint`; `consumed_at timestamptz`; `received_at timestamptz DEFAULT now()`.
+- PK id. FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`; promotion_id → cloud.promotions; allocation_id → cloud.promotion_quota_allocations.
+- UQ `(source_store_id,source_entity_id)`; UQ `(sale_id,allocation_id)`. CK consumed_quantity > 0.
+- IX `(allocation_id,consumed_at)`; `(promotion_id,source_store_id,consumed_at)`. Insert idempotent; cloud increments allocation consumed_quantity atomically after validating grant scope/version/remaining quantity.
 
 #### `replica.payments`
 - Kolom: `id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `source_payment_method_id uuid`; `payment_method_code_snapshot varchar(30)`; `payment_method_name_snapshot varchar(80)`; `amount numeric(18,2)`; `status varchar(20)`; `reference_number varchar(120)?`; `confirmed_by_source_user_id uuid?`; `confirmed_at timestamptz`; `created_at_source timestamptz`.
@@ -315,9 +332,9 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 - IX `(sale_id)`; `(source_store_id,payment_method_code_snapshot,confirmed_at)`.
 
 #### `replica.payment_evidence`
-- Kolom: `id uuid`; `payment_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `object_key text`; `protected_uri text`; `checksum_sha256 bytea`; `size_bytes bigint`; `mime_type varchar(100)`; `sanitized_filename varchar(255)?`; `uploaded_at timestamptz`; `verified_at timestamptz?`; `status varchar(20) DEFAULT 'verified'`.
-- PK id. FK payment_id → payments. UQ `(source_store_id,source_entity_id)`; UQ object_key.
-- CK octet_length(checksum_sha256)=32; size_bytes > 0; status IN ('pending_upload','verified','quarantined','deleted'); verified_at IS NULL OR verified_at >= uploaded_at.
+- Kolom: `id uuid`; `payment_id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `object_key text`; `protected_uri text`; `checksum_sha256 bytea`; `size_bytes bigint`; `mime_type varchar(100)`; `sanitized_filename varchar(255)?`; `uploaded_at timestamptz`; `verified_at timestamptz?`; `status varchar(20) DEFAULT 'pending_upload'`.
+- PK id. FK `(payment_id,sale_id)` → payments `(id,sale_id)`; FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`. UQ `(source_store_id,source_entity_id)`; UQ object_key.
+- CK octet_length(checksum_sha256)=32; size_bytes > 0; status IN ('pending_upload','verified','quarantined','deleted'); (status='verified' AND verified_at IS NOT NULL) OR (status<>'verified' AND verified_at IS NULL); verified_at IS NULL OR verified_at >= uploaded_at.
 - IX `(payment_id)`; `(status,uploaded_at)`. Binary object is outside PostgreSQL; no public URL.
 
 #### `replica.refunds`
@@ -329,7 +346,7 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.refund_lines`
 - Kolom: `id uuid`; `refund_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `source_original_sale_line_id uuid`; `sku_snapshot varchar(50)`; `name_snapshot varchar(200)`; `quantity integer`; `refund_amount numeric(18,2)`; `item_received boolean`; `item_resalable boolean`; `stock_return_eligible boolean`.
-- PK id. FK refund_id → refunds. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(refund_id,source_store_id)` → refunds `(id,source_store_id)`. UQ `(source_store_id,source_entity_id)`.
 - CK quantity > 0; refund_amount > 0; stock_return_eligible = (item_received AND item_resalable).
 - IX `(refund_id)`; `(source_store_id,source_original_sale_line_id)`.
 
@@ -406,7 +423,7 @@ Tabel reporting rebuildable. PK menggunakan kombinasi dimensi bisnis; seluruh ua
 ## 6. Indeks dan partisi: keputusan awal
 
 - Jangan partisi tabel master, registry, cursor, atau tabel kecil.
-- Kandidat partisi RANGE bulanan: `cloud.node_heartbeats` by received_at; `ingest.received_events` by received_at; `ingest.delivery_attempts` by attempted_at; `replica.sales`, refunds, cash ledger, cash sessions, deposits, audit by business/occurred date setelah volume terbukti.
+- DDL awal tidak mempartisi `ingest.received_events` atau fakta `replica`; heartbeat/delivery attempt juga tetap tabel biasa sampai volume dan retention workload terukur. Partisi kelak memerlukan revisi PK/FK dan registry.
 - PostgreSQL unique constraint pada partitioned table harus mencakup partition key. Karena identitas event/transaksi harus unik lintas partisi, gunakan registry non-partitioned:
   - `ingest.event_idempotency_registry` untuk source_node/event/idempotency/aggregate_version.
   - Registry fakta transaksi `replica.source_entity_registry` dengan kolom `source_store_id, entity_type, source_entity_id, replica_table, replica_id, business_date`, PK UUID, UQ `(source_store_id,entity_type,source_entity_id)`. Registry dibuat sejak awal dan insert-nya atomik bersama row fakta.
@@ -427,15 +444,15 @@ Berikut bukan CHECK biasa karena melibatkan banyak row/tabel:
 9. Inbox projection, aggregate cursor, dan processed status harus commit dalam transaksi yang sama.
 10. Event refund menunggu original sale tersedia; dependency lintas aggregate tidak boleh dilewati.
 11. Replica facts immutable; koreksi hanya event baru, tidak UPDATE/DELETE biasa.
-12. Bukti pembayaran hanya boleh terkait payment milik sale yang sudah PAID; checksum harus cocok sebelum status verified.
+12. Bukti pembayaran hanya boleh terkait payment milik sale yang sudah PAID; checksum harus cocok sebelum status verified.\n13. Semua FK child fakta menyertakan source_store_id agar tidak terjadi relasi lintas toko.\n14. Node pengirim harus dimiliki store_id pada payload; hal ini ditegakkan oleh composite FK dan token claims.\n15. Replica facts append-only; role database tidak diberi UPDATE/DELETE dan trigger menolak perubahan fakta.
 
 ## 8. Hal yang wajib diputuskan/diuji sebelum DDL
 
-1. Apakah satu store-server aktif per store wajib mutlak atau perlu overlap saat pergantian server; partial unique saat ini sengaja bersifat opsi.
+1. Satu store-server berstatus active per toko; server lama dapat berstatus draining selama prosedur penggantian/fencing.
 2. Penempatan PIN hash dan proses distribusi credential offline (jangan menyimpan PIN plaintext).
 3. Apakah event audit yang direplikasi semua atau subset yang diizinkan.
 4. Registry `replica.source_entity_registry` dibuat sejak awal untuk menjaga unique source identity, walaupun partisi fakta belum diaktifkan.
-5. Apakah extension `btree_gist` disetujui untuk exclusion constraint rentang harga/pajak; jika tidak, gunakan serialized validation di service.
+5. Extension `btree_gist` tidak digunakan pada baseline; no-overlap harga/pajak dijaga dengan lock parent row dan validasi transaksi.
 6. Retensi metadata idempotency setelah payload raw dihapus harus cukup lama untuk menolak duplicate lama; usulan metadata registry dipertahankan minimal sepanjang umur fakta transaksi + 1 tahun atau sesuai legal hold.
 7. Final index/partition harus didasarkan pada query API dan load test; rancangan ini belum mengklaim kapasitas produksi.
 
