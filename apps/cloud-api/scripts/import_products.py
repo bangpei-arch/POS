@@ -41,16 +41,20 @@ def main() -> None:
                     price = money(row["price"])
                     cur.execute(
                         """
-                        INSERT INTO cloud.products(id, sku, product_name, barcode, is_active, updated_at)
-                        VALUES (%s, %s, %s, %s, true, now())
+                        INSERT INTO cloud.products(id, sku, product_name, barcode, tax_code, tax_rate, is_active, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, true, now())
                         ON CONFLICT (id) DO UPDATE
                         SET sku = EXCLUDED.sku,
                             product_name = EXCLUDED.product_name,
                             barcode = EXCLUDED.barcode,
+                            tax_code = EXCLUDED.tax_code,
+                            tax_rate = EXCLUDED.tax_rate,
                             is_active = true,
                             updated_at = now()
                         """,
-                        (product_id, row["sku"].strip(), row["name"].strip(), (row.get("barcode") or "").strip() or None),
+                        (product_id, row["sku"].strip(), row["name"].strip(), (row.get("barcode") or "").strip() or None,
+                         (row.get("tax_code") or "").strip() or None,
+                         Decimal(row.get("tax_rate") or "0").quantize(Decimal("0.0001"))),
                     )
                     cur.execute("SELECT id FROM cloud.products WHERE id = %s FOR UPDATE", (product_id,))
                     cur.execute(
