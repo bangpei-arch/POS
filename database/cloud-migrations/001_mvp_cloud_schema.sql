@@ -96,6 +96,13 @@ CREATE TABLE cloud.payment_methods (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+INSERT INTO cloud.payment_methods(code, display_name, requires_manual_confirmation)
+VALUES
+    ('CASH', 'Tunai', false),
+    ('TRANSFER', 'Transfer', true),
+    ('QRIS', 'QRIS', true)
+ON CONFLICT (code) DO NOTHING;
+
 -- Dedupe registry is retained after raw payload purge. Do not partition this table in MVP.
 CREATE TABLE ingest.event_registry (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
