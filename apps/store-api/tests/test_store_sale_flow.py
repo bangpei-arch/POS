@@ -175,3 +175,38 @@ def test_one_paid_sale_and_idempotent_retry(store_api):
             (ctx["node_id"],),
         ).fetchone()[0]
         assert audit_outbox >= 4
+
+def test_cashier_is_locked_after_five_failed_pin_attempts(store_api):
+    client = store_api["client"]
+    for _ in range(5):
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"employee_code": store_api["employee_code"], "pin": "9999"},
+        )
+        assert response.status_code == 401
+
+    blocked = client.post(
+        "/api/v1/auth/login",
+        json={"employee_code": store_api["employee_code"], "pin": "1234"},
+    )
+    assert blocked.status_code == 423
+
+
+def test_deactivated_terminal_invalidates_existing_cashier_token(store_api):
+    client = store_api["client"]
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"employee_code": store_api["employee_code"], "pin": "1234"},
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+
+    with psycopg.connect(store_api["dsn"]) as conn:
+        conn.execute(
+            "UPDATE pos.org_terminals SET is_active=false WHERE id=%s",
+            (store_api["terminal_id"],),
+        )
+
+    rejected = client.get("/api/v1/auth/me", headers=headers)
+    assert rejected.status_code == 401
