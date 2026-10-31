@@ -1,0 +1,49 @@
+name: Cloud PostgreSQL MVP validation
+
+on:
+  push:
+    paths:
+      - "database/cloud-migrations/**"
+      - "database/cloud-tests/**"
+      - ".github/workflows/cloud-postgres-validation.yml"
+  pull_request:
+    paths:
+      - "database/cloud-migrations/**"
+      - "database/cloud-tests/**"
+      - ".github/workflows/cloud-postgres-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  cloud-postgres-validation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: cloud_test
+          POSTGRES_USER: cloud_test
+          POSTGRES_PASSWORD: cloud_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cloud_test -d cloud_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply cloud MVP migration to an empty cloud database
+        env:
+          PGPASSWORD: cloud_test_password
+        run: |
+          psql -h localhost -p 5432 -U cloud_test -d cloud_test \
+            -v ON_ERROR_STOP=1 -f database/cloud-migrations/001_mvp_cloud_schema.sql
+
+      - name: Run cloud MVP schema and integrity smoke test
+        env:
+          PGPASSWORD: cloud_test_password
+        run: |
+          psql -h localhost -p 5432 -U cloud_test -d cloud_test \
+            -v ON_ERROR_STOP=1 -f database/cloud-tests/001_mvp_cloud_smoke.sql
