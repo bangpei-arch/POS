@@ -721,6 +721,128 @@ BEGIN
 END;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Audited operator recovery. Payload/event identity are never rewritten.
+-- ---------------------------------------------------------------------------
+CREATE TABLE sync_outbox_manual_replays (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  outbox_id uuid NOT NULL REFERENCES sync_outbox(id),
+  replayed_by uuid NOT NULL REFERENCES iam_users(id),
+  reason text NOT NULL CHECK (length(btrim(reason)) > 0),
+  previous_attempts integer NOT NULL,
+  replayed_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION replay_failed_sync_outbox(
+  p_outbox_id uuid,
+  p_actor_id uuid,
+  p_reason text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SET search_path = pos, public
+AS $$
+DECLARE
+  v_row sync_outbox%ROWTYPE;
+BEGIN
+  IF p_reason IS NULL OR length(btrim(p_reason)) = 0 THEN
+    RAISE EXCEPTION 'A replay reason is required';
+  END IF;
+  SELECT * INTO v_row FROM sync_outbox
+  WHERE id = p_outbox_id AND status = 'failed'
+  FOR UPDATE;
+  IF NOT FOUND THEN RETURN false; END IF;
+
+  INSERT INTO sync_outbox_manual_replays(outbox_id,replayed_by,reason,previous_attempts)
+  VALUES (p_outbox_id,p_actor_id,p_reason,v_row.attempts);
+
+  UPDATE sync_outbox
+  SET status = 'pending', attempts = 0, next_retry_at = NULL,
+      last_error = NULL, last_error_class = NULL
+  WHERE id = p_outbox_id;
+  RETURN true;
+END;
+$$;
+
+CREATE TABLE sync_inbox_manual_resolutions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  inbox_id uuid NOT NULL REFERENCES sync_inbox(id),
+  source_node_id uuid NOT NULL REFERENCES sync_nodes(id),
+  aggregate_type varchar(60) NOT NULL,
+  aggregate_id uuid NOT NULL,
+  aggregate_version bigint NOT NULL,
+  action varchar(10) NOT NULL CHECK (action IN ('replay','skip')),
+  resolved_by uuid NOT NULL REFERENCES iam_users(id),
+  reason text NOT NULL CHECK (length(btrim(reason)) > 0),
+  resolved_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION resolve_sync_inbox(
+  p_inbox_id uuid,
+  p_actor_id uuid,
+  p_action varchar(10),
+  p_reason text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SET search_path = pos, public
+AS $$
+DECLARE
+  v_row sync_inbox%ROWTYPE;
+  v_cursor bigint;
+BEGIN
+  IF p_action NOT IN ('replay','skip') THEN
+    RAISE EXCEPTION 'Action must be replay or skip';
+  END IF;
+  IF p_reason IS NULL OR length(btrim(p_reason)) = 0 THEN
+    RAISE EXCEPTION 'A resolution reason is required';
+  END IF;
+
+  SELECT * INTO v_row FROM sync_inbox
+  WHERE id = p_inbox_id AND processing_status IN ('failed','rejected')
+  FOR UPDATE;
+  IF NOT FOUND THEN RETURN false; END IF;
+
+  SELECT last_processed_version INTO v_cursor
+  FROM sync_inbox_aggregate_cursors
+  WHERE source_node_id = v_row.source_node_id
+    AND aggregate_type = v_row.aggregate_type
+    AND aggregate_id = v_row.aggregate_id
+  FOR UPDATE;
+  IF NOT FOUND THEN RETURN false; END IF;
+
+  IF p_action = 'skip' AND v_row.aggregate_version <> v_cursor + 1 THEN
+    RAISE EXCEPTION 'Only the next expected aggregate version can be skipped';
+  END IF;
+
+  INSERT INTO sync_inbox_manual_resolutions(
+    inbox_id,source_node_id,aggregate_type,aggregate_id,aggregate_version,
+    action,resolved_by,reason
+  ) VALUES (
+    v_row.id,v_row.source_node_id,v_row.aggregate_type,v_row.aggregate_id,
+    v_row.aggregate_version,p_action,p_actor_id,p_reason
+  );
+
+  IF p_action = 'replay' THEN
+    UPDATE sync_inbox
+    SET processing_status = 'received', processing_attempts = 0,
+        next_retry_at = NULL, last_error = NULL
+    WHERE id = p_inbox_id;
+  ELSE
+    UPDATE sync_inbox_aggregate_cursors
+    SET last_processed_version = v_row.aggregate_version, updated_at = now()
+    WHERE source_node_id = v_row.source_node_id
+      AND aggregate_type = v_row.aggregate_type
+      AND aggregate_id = v_row.aggregate_id;
+    UPDATE sync_inbox
+    SET processing_status = 'rejected', processed_at = now(),
+        response_payload = jsonb_build_object('resolution','skipped','reason',p_reason)
+    WHERE id = p_inbox_id;
+  END IF;
+  RETURN true;
+END;
+$$;
+
 COMMENT ON COLUMN sync_outbox.sent_at IS
   'Compatibility timestamp; set only after a valid receiver ACK. Not merely HTTP send time.';
 COMMENT ON COLUMN sync_outbox.aggregate_version IS
