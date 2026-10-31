@@ -89,7 +89,7 @@ def current_node(
             algorithms=["RS256"],
             audience=settings.jwt_audience,
             issuer=settings.jwt_issuer,
-            options={"require": ["exp", "iat", "nbf", "sub", "store_id", "cred_ver"]},
+            options={"require": ["exp", "iat", "nbf", "sub", "store_id", "cred_ver", "scope"]},
         )
     except (jwt.PyJWTError, OSError):
         raise HTTPException(status_code=401, detail="Invalid or expired access token") from None
@@ -115,10 +115,13 @@ def current_node(
     if not row:
         raise HTTPException(status_code=401, detail="Node credential revoked or inactive")
 
+    token_scopes = set(str(claims.get("scope", "")).split())
+    current_scopes = set(row["scopes"])
+    effective_scopes = sorted(token_scopes.intersection(current_scopes))
     return {
         "node_id": str(row["node_id"]),
         "store_id": str(row["store_id"]),
-        "scopes": list(row["scopes"]),
+        "scopes": effective_scopes,
     }
 
 
