@@ -1,11 +1,11 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-from psycopg import OperationalError
+from fastapi import Depends, FastAPI
+from psycopg import Connection
 
 from app.config import get_settings
-from app.database import create_pool
-from app.routes import heartbeat, master, oauth
+from app.database import create_pool, get_connection
+from app.routes import heartbeat, keys, master, oauth
 
 
 @asynccontextmanager
@@ -34,6 +34,7 @@ app = FastAPI(
 app.include_router(oauth.router)
 app.include_router(master.router)
 app.include_router(heartbeat.router)
+app.include_router(keys.router)
 
 
 @app.get("/healthz")
@@ -42,7 +43,6 @@ def healthz():
 
 
 @app.get("/readyz")
-def readyz():
-    from fastapi import Request
-    # DB readiness is provided by the deployment probe via a short-lived pool checkout.
+def readyz(connection: Connection = Depends(get_connection)):
+    connection.execute("SELECT 1")
     return {"status": "ready"}
