@@ -19,6 +19,17 @@ Prinsip wajib:
 7. Tabel laporan/agregasi adalah proyeksi yang dapat dibangun ulang, bukan sumber kebenaran transaksi.
 8. Database cloud tidak menampung cart dan Hold Order operasional toko.
 
+## 2.1 Target versi PostgreSQL dan kompatibilitas
+
+**Keputusan:** database cloud menggunakan PostgreSQL 16 sebagai baseline minimum. PostgreSQL versi mayor yang lebih baru boleh digunakan setelah kompatibilitas aplikasi, migration, extension, backup/restore, dan performa diuji.
+
+Ketentuan implementasi:
+- Migration dan query harus kompatibel dengan PostgreSQL 16; jangan memakai fitur yang hanya tersedia pada versi lebih baru tanpa keputusan eksplisit.
+- CI menjalankan validasi pada PostgreSQL 16 dan versi mayor lebih baru yang sedang dipertimbangkan untuk deployment.
+- Versi produksi dipin ke versi mayor/minor yang telah lulus pengujian; hindari upgrade mayor otomatis.
+- Upgrade mayor memerlukan staging test, backup yang tervalidasi, uji restore, uji migration, dan rencana rollback/restore.
+- Extension PostgreSQL yang dipakai harus tersedia dan kompatibel pada seluruh versi target; daftar extension final ditetapkan saat DDL/infrastruktur dirancang.
+
 ## 2. Batas schema dan namespace
 
 Gunakan PostgreSQL dengan schema terpisah:
