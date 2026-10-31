@@ -137,7 +137,6 @@ Respons per event (batch dapat berisi hasil campuran):
     {
       "event_id": "uuid",
       "status": "processed",
-      "ack_token": "opaque-token",
       "processed_at": "2026-10-31T02:16:02Z",
       "duplicate": false
     }
@@ -150,9 +149,10 @@ Status hasil: `processed`, `already_processed`, `deferred`, `rejected`, `conflic
 ### 4.2 Semantik ACK
 
 - Final ACK hanya berarti fakta bisnis telah berhasil diproyeksikan di cloud dan inbox cursor + status processed commit atomik.
-- HTTP 200 dengan `processed` atau `already_processed` adalah final ACK. Sender kemudian memanggil `ack_sync_outbox(outbox_id,claim_token,...)`.
-- Jika cloud telah menyimpan envelope tetapi worker belum memproses, respons per event `deferred` dan HTTP 202; sender tidak boleh menandai outbox sent.
-- Sender menjadwalkan retry event yang deferred dengan Retry-After/backoff. Retry dengan event_id/idempotency yang sama akan memperoleh status akhir saat sudah diproses.
+- Untuk request batch yang valid, HTTP 200 mengembalikan hasil per event. `processed` atau `already_processed` adalah final ACK untuk event tersebut; sender memanggil `ack_sync_outbox(outbox_id,claim_token,...)`.
+- Event yang sudah tersimpan durable tetapi belum selesai diproyeksikan mendapat status per-event `deferred` beserta `retry_after_seconds`; sender tidak boleh menandai outbox sent.
+- HTTP 202 hanya dipakai bila seluruh batch diterima durable tetapi belum ada event yang selesai diproses. Untuk batch campuran, HTTP 200 dan status masing-masing event menjadi otoritatif.
+- Sender menjadwalkan retry event deferred dengan Retry-After/backoff. Retry dengan event_id/idempotency yang sama akan memperoleh status akhir saat sudah diproses.
 - Jika response hilang setelah cloud commit, retry event yang sama harus mengembalikan `already_processed` dengan hasil ACK yang sama.
 - Tidak ada ACK final hanya karena payload diterima ke buffer/proxy atau masuk inbox.
 
@@ -229,7 +229,8 @@ Heartbeat tidak boleh membawa payload pelanggan/transaksi. Local alert tetap akt
 | HTTP | Makna | Tindakan sender |
 |---|---|---|
 | 200 | processed/already_processed | Final ACK outbox |
-| 202 | diterima durable, belum selesai diproses | Retry/poll event sama; jangan ACK final |
+| 202 | seluruh batch diterima durable, belum selesai diproses | Retry event yang sama; jangan ACK final |
+| 200 + per-event `deferred` | sebagian event belum selesai diproses | Retry hanya event deferred; event processed boleh di-ACK |
 | 400 | envelope/request malformed | Perbaiki client; alert |
 | 401/403 | credential/scope tidak sah | Stop pengiriman, alert Central Admin |
 | 409 | idempotency/hash conflict | Dead-letter; intervensi operator |
