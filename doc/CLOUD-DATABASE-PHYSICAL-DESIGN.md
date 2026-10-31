@@ -2,7 +2,7 @@
 
 **Versi:** 0.1 (physical logical design)  
 **Tanggal:** 31 Oktober 2026  
-**Status:** Draft review; bukan migration dan belum production-ready  
+**Status:** Referensi target jangka panjang; bukan daftar wajib MVP. MVP DDL berada di database/cloud-migrations/001_mvp_cloud_schema.sql  
 **Target:** PostgreSQL 16 minimum; versi mayor lebih baru setelah uji kompatibilitas.
 
 Dokumen ini mendefinisikan kolom, tipe, nullability, PK, FK, unique/check constraint, dan index untuk tabel cloud. Semua nama tabel fully-qualified. Ini database cloud terpisah; migration lokal toko 001–004 tidak dijalankan di sini.
@@ -459,3 +459,10 @@ Berikut bukan CHECK biasa karena melibatkan banyak row/tabel:
 ## 9. Batas dokumen
 
 Desain ini belum berupa DDL. Nama field, index, constraint, dan trigger masih perlu review silang dengan kontrak event JSON Schema dan permission model. Setelah disetujui, buat migration cloud terpisah di `database/cloud/migrations/`, CI PostgreSQL 16, fixture multi-store, uji idempotency/concurrency, dan uji restore. Jangan mengubah migration operasional toko sebagai bagian dari pekerjaan ini.
+
+
+## 10. Relasi terhadap MVP
+
+Desain 71 tabel di atas adalah target jangka panjang, bukan syarat rilis pertama. Untuk MVP end-to-end gunakan hanya tabel yang dibuat oleh migration cloud terpisah database/cloud-migrations/001_mvp_cloud_schema.sql. Migration tersebut mencakup registry store/node/credential, master minimal, event dedupe, sales, sale lines, payments, audit allowlist, dan view laporan.
+
+Jangan membuat DDL semua 71 tabel sebelum vertical slice terbukti. Tabel refund, promosi, customer merge, bukti pembayaran, cash reconciliation, retention actions, replay UI, dan partisi ditambahkan ketika fitur terkait benar-benar masuk scope. Pertahankan UUID sumber, tenant-scoped FK, numeric money, immutable paid facts, dan idempotency dari awal.
