@@ -36,6 +36,7 @@ Dokumen ini memecah kelompok entitas pada `CLOUD-DATABASE-DESIGN.md` menjadi inv
 | Tabel | Fungsi utama |
 |---|---|
 | `cloud.users` | Identitas pegawai |
+| `cloud.user_pin_credentials` | Hash PIN/versi credential untuk distribusi cache offline terproteksi |
 | `cloud.roles` | Definisi role |
 | `cloud.permissions` | Definisi permission |
 | `cloud.role_permissions` | Relasi role-permission |
@@ -64,6 +65,7 @@ Cache PIN/role offline dikirim hanya ke toko yang relevan dan berlaku maksimal 2
 | `cloud.promotion_products` | Relasi promosi-produk |
 | `cloud.promotion_quotas` | Kuota global promosi |
 | `cloud.promotion_quota_allocations` | Grant kuota per toko |
+| `cloud.manual_discount_limits` | Batas diskon manual berdasarkan role/user dan scope toko |
 | `cloud.payment_methods` | Metode pembayaran aktif |
 | `cloud.store_hours` | Jam operasional reguler |
 | `cloud.store_exceptions` | Hari libur/jam khusus |
@@ -89,6 +91,7 @@ Auto-merge pelanggan memakai nomor telepon aktif yang dinormalisasi ke E.164. ID
 | Tabel | Fungsi utama |
 |---|---|
 | `ingest.received_events` | Envelope, payload, hash, status proses, dan waktu retensi raw event |
+| `ingest.event_idempotency_registry` | Registry non-partitioned untuk dedupe event/idempotency/aggregate version |
 | `ingest.aggregate_cursors` | Versi terakhir yang diproses per source node dan aggregate |
 | `ingest.delivery_attempts` | Riwayat penerimaan, retry, dan hasil per event |
 | `ingest.replay_actions` | Audit replay, skip, atau penutupan dead-letter |
@@ -112,6 +115,7 @@ Catatan desain:
 | `replica.sale_promotion_cancellations` | Pembatalan promosi beserta alasan |
 | `replica.payments` | Pembayaran terkonfirmasi dan split tender |
 | `replica.payment_evidence` | Metadata bukti pembayaran dan protected object reference |
+| `replica.promotion_quota_consumptions` | Fakta konsumsi grant kuota promosi per sale/allocation |
 | `replica.refunds` | Header refund final |
 | `replica.refund_lines` | Detail refund dan status kondisi barang |
 | `replica.refund_payments` | Breakdown payout refund |
@@ -122,7 +126,7 @@ Catatan desain:
 | `replica.audit_events` | Audit event yang dikirim dari toko |
 | `replica.source_entity_registry` | Registry identitas sumber non-partitioned untuk unique lintas partisi |
 
-`replica.payment_evidence`* adalah usulan eksplisit untuk memisahkan metadata bukti pembayaran dari row pembayaran. Diputuskan menggunakan tabel terpisah agar siklus hidup bukti, verifikasi checksum, akses object storage, dan audit dapat dikelola independen dari pembayaran. File binary disimpan di private object storage, bukan PostgreSQL.
+`replica.payment_evidence` adalah keputusan desain untuk memisahkan metadata bukti pembayaran dari row pembayaran. Tabel terpisah agar siklus hidup bukti, verifikasi checksum, akses object storage, dan audit dapat dikelola independen dari pembayaran. File binary disimpan di private object storage, bukan PostgreSQL.
 
 Semua fakta transaksi menyimpan identitas asal, minimal source store/node/entity, waktu asal, waktu diterima, dan business date bila relevan. Transaksi pending tidak direplikasi; hanya `sale.paid` yang menjadi fakta sale cloud.
 
@@ -141,14 +145,14 @@ Reporting bukan sumber kebenaran dan harus dapat dibangun ulang dari schema `rep
 
 ## 6. Hal yang harus diselesaikan sebelum DDL
 
-1. Tetapkan kolom, tipe data, nullability, PK/FK, unique constraint, dan check constraint per tabel.
-2. Tentukan pemisahan data master global vs scoped per toko dan aturan tenant isolation.
-3. Tetapkan strategi partisi dan registry idempotensi global lintas partisi.
-4. Review relasi detail antara sale, payment, refund, audit, dan bukti pembayaran terhadap kontrak event.
-5. Selaraskan seluruh inventaris dengan desain fisik; `replica.payment_evidence` sudah diputuskan sebagai tabel tersendiri.
-6. Tetapkan indeks berdasarkan query API, rekonsiliasi, dan laporan yang nyata.
-7. Tentukan backup cloud, RPO/RTO, PITR, dan uji restore.
-8. Uji migration dan extension pada PostgreSQL 16 serta versi mayor lebih baru yang akan dipilih.
+1. Review dan sahkan desain fisik v0.2 beserta composite FK tenant-scoped.
+2. Selesaikan event JSON Schema agar semua kolom fakta dapat diisi secara deterministik.
+3. Tetapkan strategi partisi setelah load test; migration awal tidak mempartisi received_events.
+4. Tetapkan daftar audit event yang dikirim ke cloud dan PII yang harus disaring.
+5. Finalisasi backup cloud, RPO/RTO, PITR, dan uji restore.
+6. Audit ulang seluruh FK, unique/check constraint, dan urutan dependency DDL.
+7. Siapkan migration cloud terpisah dan test multi-store.
+8. Uji migration PostgreSQL 16 dan versi mayor baru setelah kompatibilitas diuji.
 
 ## 7. Batas dokumen
 
