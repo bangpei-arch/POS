@@ -127,8 +127,11 @@ def test_client_credentials_master_bootstrap_and_heartbeat(cloud_api):
     body = bootstrap.json()
     assert body["store"]["id"] == str(ctx["store_id"])
     assert any(p["sku"] == ctx["product_sku"] and p["price"] == "12345.00"
+               and p["base_uom_code"] == "pcs" and p["tax_rate"] == "0.0000"
                for p in body["products"])
     assert {m["code"] for m in body["payment_methods"]} >= {"CASH", "TRANSFER", "QRIS"}
+    cash = next(m for m in body["payment_methods"] if m["code"] == "CASH")
+    assert cash["is_cash"] is True and cash["method_type"] == "cash"
 
     heartbeat = ctx["client"].post(
         "/api/v1/sync/heartbeat",
