@@ -12,6 +12,7 @@ DECLARE
     v_product uuid := gen_random_uuid();
     v_sale uuid := gen_random_uuid();
     v_payment uuid := gen_random_uuid();
+    v_method uuid;
     v_cash_role uuid;
 BEGIN
     INSERT INTO org_stores(id, code, name) VALUES (v_store, 'MVP-FIELDS-' || substr(v_store::text,1,8), 'MVP Fields Test');
@@ -47,13 +48,22 @@ BEGIN
         RAISE EXCEPTION 'CASHIER role seed missing';
     END IF;
 
-    SELECT id INTO v_payment FROM md_payment_methods WHERE code = 'CASH';
+    SELECT id INTO v_method FROM md_payment_methods WHERE code = 'CASH';
     INSERT INTO pos_payments(
         id, sale_id, payment_method_id, amount, status, confirmed_by, confirmed_at,
         cash_received_amount, change_amount
     ) VALUES (
-        v_payment, v_sale, v_payment, 100, 'confirmed', v_user, now(), 120, 20
+        v_payment, v_sale, v_method, 100, 'confirmed', v_user, now(), 120, 20
     );
+
+    -- Non-cash payment cannot carry a cash change amount without tendered cash.
+    BEGIN
+        UPDATE pos_payments SET cash_received_amount = NULL, change_amount = 1
+        WHERE id = v_payment;
+        RAISE EXCEPTION 'invalid cash change unexpectedly succeeded';
+    EXCEPTION WHEN check_violation THEN
+        NULL;
+    END;
 
     UPDATE pos_sales SET status = 'paid', paid_at = now() WHERE id = v_sale;
 
@@ -75,14 +85,6 @@ BEGIN
         NULL;
     END;
 
-    -- Non-cash payment cannot carry a cash change amount without tendered cash.
-    BEGIN
-        UPDATE pos_payments SET cash_received_amount = NULL, change_amount = 1
-        WHERE id = v_payment;
-        RAISE EXCEPTION 'invalid cash change unexpectedly succeeded';
-    EXCEPTION WHEN check_violation THEN
-        NULL;
-    END;
 END;
 $$;
 
