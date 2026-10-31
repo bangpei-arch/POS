@@ -58,6 +58,13 @@ jobs:
           psql -h localhost -p 5432 -U pos_test -d pos_test \
             -v ON_ERROR_STOP=1 -f database/migrations/003_transaction_finality.sql
 
+      - name: Run sync recovery and ordering migration
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/migrations/004_sync_recovery_ordering.sql
+
       - name: Run schema and workflow smoke tests
         env:
           PGPASSWORD: pos_test_password
@@ -90,3 +97,15 @@ jobs:
         env:
           POS_TEST_DSN: postgresql://pos_test:pos_test_password@localhost:5432/pos_test
         run: python database/tests/004_refund_concurrency.py
+
+      - name: Run sync recovery and ordering tests
+        env:
+          PGPASSWORD: pos_test_password
+        run: |
+          psql -h localhost -p 5432 -U pos_test -d pos_test \
+            -v ON_ERROR_STOP=1 -f database/tests/006_sync_recovery_ordering.sql
+
+      - name: Run concurrent sync claim test
+        env:
+          POS_TEST_DSN: postgresql://pos_test:pos_test_password@localhost:5432/pos_test
+        run: python database/tests/007_sync_claim_concurrency.py
