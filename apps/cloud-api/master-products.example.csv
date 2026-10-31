@@ -1,1 +1,1 @@
-id,sku,name,barcode,price
+id,sku,name,barcode,price,base_uom_code,tax_code,tax_rate
