@@ -28,11 +28,35 @@ Alur utama: Terminal → Store API → local PostgreSQL + outbox → Store Sende
 - Nilai uang dikirim sebagai decimal string, bukan floating-point JSON.
 - Setiap request memiliki `X-Request-ID`; setiap event memiliki `event_id` dan `idempotency_key`.
 - Node store-server adalah satu-satunya principal sinkronisasi cloud pada tahap awal.
-- Auth memakai credential mesin per node dengan scope store; credential disimpan sebagai hash/reference aman di cloud dan secret di secret store lokal. Rotasi dan revocation wajib tersedia. Detail mekanisme (OAuth client credentials vs HMAC signing/mTLS) belum diputuskan.
+- Autentikasi menggunakan OAuth 2.0 Client Credentials. Setiap store-server memiliki client_id dan client_secret unik; terminal POS tidak memiliki credential cloud.
+- Token endpoint: POST /api/v1/oauth/token dengan grant_type=client_credentials dan scope yang diminta. Client authentication menggunakan HTTP Basic melalui HTTPS.
+- Authorization server menerbitkan JWT access token berumur 5 menit (default awal), ditandatangani asymmetric key ES256 atau RS256. Private signing key disimpan di KMS/secret manager cloud; receiver memvalidasi signature melalui public key/JWKS, issuer, audience, expiry, not-before, dan allowed algorithm. Tidak ada refresh token; server toko meminta token baru dengan client credentials.
+- Klaim minimum JWT: iss, sub (node_id), aud (POS cloud API), iat, nbf, exp, jti, scope, dan store_id. Scope awal: sync:events:write, sync:master:read, sync:master:ack, sync:heartbeat:write. Akses dibatasi ke node/store yang terdaftar.
+- Cloud menyimpan client_id, hash client_secret (Argon2id atau setara), status, masa berlaku, scope, dan metadata rotasi/revocation; secret plaintext tidak disimpan. Store server menyimpan secret pada OS secret store atau konfigurasi terenkripsi dengan permission terbatas, bukan source code, database transaksi, atau log.
+- Rotasi menerbitkan secret baru dengan masa overlap terbatas; secret lama dicabut setelah secret baru terverifikasi. Revocation harus menolak token baru dan membatalkan token aktif melalui pemeriksaan status/credential version atau denylist jti sampai token kedaluwarsa. Credential dicabut tanpa menghapus outbox pending.
+- Receiver wajib mencocokkan source_node_id dan source_store_id pada body dengan klaim token; nilai body bukan sumber otorisasi. Token, client_secret, PIN, dan payload sensitif tidak boleh masuk log.
 - Batas payload/batch awal yang diusulkan: maksimal 25 event atau 1 MiB per request, mana yang tercapai lebih dahulu; konfigurabel setelah load test.
 - Tidak ada jaminan exactly-once pada jaringan. Protokol memberi at-least-once delivery + idempotent processing sehingga efek bisnis tidak terduplikasi.
 
-## 3. Terminal ke Store API
+## 3. Autentikasi server toko ke Cloud
+
+### 3.1 Penerbitan access token
+
+POST /api/v1/oauth/token
+
+Request menggunakan application/x-www-form-urlencoded dengan grant_type=client_credentials dan scope yang diminta. Client mengirim HTTP Basic credentials melalui TLS.
+
+Respons OAuth standar berisi access_token, token_type=Bearer, expires_in=300, dan scope. Token disimpan hanya di memori/cache berumur pendek. Tidak ada refresh token pada Client Credentials. Jika token endpoint tidak tersedia, worker menahan pengiriman dan mempertahankan outbox; transaksi lokal tetap berjalan.
+
+### 3.2 Validasi dan otorisasi token
+
+Cloud memvalidasi signature JWT, issuer, audience, exp, nbf, algoritma yang diizinkan, status node/credential, serta scope endpoint. Clock skew default 30 detik. Token kedaluwarsa menghasilkan HTTP 401; scope atau store/node mismatch menghasilkan HTTP 403. Setiap endpoint sinkronisasi mencocokkan node dan store pada path/body dengan klaim token.
+
+### 3.3 Rotasi dan pencabutan credential
+
+Setiap node dapat memiliki dua secret aktif selama periode rotasi terbatas. Central Admin melakukan rotate/revoke; aktivitas tercatat di audit. Pencabutan tidak menghapus event pending dan tidak mengubah identitas event. Setelah credential dicabut, server harus mendapat credential baru melalui prosedur provisioning terotorisasi.
+
+## 4. Terminal ke Store API
 
 ### 3.1 Submit transaksi terminal
 
@@ -84,7 +108,7 @@ Ketentuan:
 
 Mencatat app_version, observed_at, connectivity state, local queue count, dan status printer opsional. Heartbeat bukan event penjualan dan tidak boleh memblokir transaksi.
 
-## 4. Store Sender ke Cloud Receiver
+## 5. Store Sender ke Cloud Receiver
 
 ### 4.1 Kirim batch event
 
@@ -165,7 +189,7 @@ Unique constraints cloud:
 
 Jika event_id/key sama dan payload hash sama, return status existing. Jika hash berbeda, return 409 conflict dan alert. Aggregate version harus cursor + 1; versi berikutnya ditahan sampai gap diselesaikan. Satu aggregate tidak boleh diproses paralel keluar urutan. Aggregate berbeda boleh paralel. Dependency lintas aggregate tetap divalidasi, misalnya refund harus menunggu sale asal tersedia di cloud.
 
-## 5. Master data Cloud ke Store
+## 6. Master data Cloud ke Store
 
 ### 5.1 Pull perubahan
 
@@ -212,7 +236,7 @@ Cloud memvalidasi cursor tidak bergerak mundur dan tidak melampaui high-water ma
 
 Mengembalikan `snapshot_id`, `snapshot_cursor`, dan URL/halaman data master scoped toko. Store menerapkan snapshot secara staging, memvalidasi kelengkapan, swap/commit, lalu mulai pull setelah snapshot_cursor. Detail format snapshot dan pemulihan bootstrap harus ditentukan sebelum implementasi.
 
-## 6. Monitoring node
+## 7. Monitoring node
 
 `POST /api/v1/sync/heartbeat`
 
@@ -224,7 +248,7 @@ Payload: node_id, store_id, app_version, observed_at, outbox_pending_count, olde
 
 Heartbeat tidak boleh membawa payload pelanggan/transaksi. Local alert tetap aktif ketika internet putus; cloud alert aktif setelah node terhubung kembali.
 
-## 7. HTTP status dan kebijakan retry
+## 8. HTTP status dan kebijakan retry
 
 | HTTP | Makna | Tindakan sender |
 |---|---|---|
@@ -242,7 +266,7 @@ Heartbeat tidak boleh membawa payload pelanggan/transaksi. Local alert tetap akt
 
 Retry exponential backoff dengan full jitter; baseline base 2 detik, cap 15 menit. Local migration 004 memiliki max_attempts default 12 dan status failed untuk intervensi; replay manual diaudit dan memakai event_id/payload yang sama. Perbedaan permanent vs transient harus dipetakan oleh sender/receiver.
 
-## 8. Worker behavior
+## 9. Worker behavior
 
 ### 8.1 Store Sender Worker
 
@@ -283,7 +307,7 @@ Retry exponential backoff dengan full jitter; baseline base 2 detik, cap 15 meni
 
 Update agregasi dari fakta `replica` setelah transaksi projection commit. Gunakan watermark/queue internal dan operasi idempotent. Laporan dapat tertunda tanpa memengaruhi final ACK transaksi; laporan bukan bagian dari transaksi ACK.
 
-## 9. Event catalog awal
+## 10. Event catalog awal
 
 | Aggregate | Event type | Final payload minimum |
 |---|---|---|
@@ -310,9 +334,9 @@ Event names and exact payload JSON Schema must be versioned and finalized separa
 - Backup dan restore test cloud terpisah dari local.
 - Manual replay/skip memerlukan alasan, actor, approval/permission, dan immutable audit trail.
 
-## 11. Keputusan yang perlu disahkan sebelum API/worker coding
+## 12. Keputusan yang perlu disahkan sebelum API/worker coding
 
-1. Mekanisme autentikasi mesin: OAuth client credentials, HMAC signing, atau mTLS.
+1. Parameter OAuth2 yang dikunci saat security review: masa hidup token 5 menit, algoritma ES256/RS256, dan daftar scope.
 2. Batas batch/payload dan timeout final berdasarkan load test.
 3. Event payload JSON Schema final dan daftar event mana yang wajib dikirim.
 4. Kebijakan customer merge saat nomor telepon konflik lintas toko.
@@ -323,6 +347,6 @@ Event names and exact payload JSON Schema must be versioned and finalized separa
 9. Apakah terminal submit PAID sale hanya setelah finalisasi lokal penuh, atau juga perlu mengirim PAYMENT_PENDING sebagai event operasional.
 10. Kebijakan retention payload raw event, retry failed, dan dead-letter.
 
-## 12. Batas tahap ini
+## 13. Batas tahap ini
 
 Ini adalah kontrak logis v0.1. Belum ada FastAPI route, Pydantic schema, worker Python, DDL cloud, atau integration test runtime. Implementasi baru dimulai setelah kontrak dan keputusan terbuka disetujui.
