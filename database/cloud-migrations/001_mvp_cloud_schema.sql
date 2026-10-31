@@ -113,6 +113,9 @@ CREATE TABLE ingest.event_registry (
     occurred_at timestamptz NOT NULL,
     received_at timestamptz NOT NULL DEFAULT now(),
     processed_at timestamptz,
+    resolved_at timestamptz,
+    retain_until timestamptz,
+    payload_purged_at timestamptz,
     status varchar(20) NOT NULL DEFAULT 'received',
     error_code varchar(80),
     CONSTRAINT fk_event_registry_node_store
@@ -125,7 +128,11 @@ CREATE TABLE ingest.event_registry (
     CONSTRAINT ck_event_registry_version CHECK(aggregate_version > 0 AND schema_version > 0),
     CONSTRAINT ck_event_registry_hash CHECK(octet_length(payload_sha256) = 32),
     CONSTRAINT ck_event_registry_payload CHECK(payload IS NULL OR jsonb_typeof(payload) = 'object'),
-    CONSTRAINT ck_event_registry_status CHECK(status IN ('received','processed','rejected'))
+    CONSTRAINT ck_event_registry_status CHECK(status IN ('received','processed','rejected','dead_letter')),
+    CONSTRAINT ck_event_registry_retention CHECK(
+        (status <> 'dead_letter' OR (retain_until IS NOT NULL AND retain_until >= received_at + interval '1 year'))
+        AND (payload_purged_at IS NULL OR payload IS NULL)
+    )
 );
 CREATE INDEX ix_event_registry_retention ON ingest.event_registry(status, received_at);
 CREATE INDEX ix_event_registry_aggregate ON ingest.event_registry(source_node_id, aggregate_type, aggregate_id, aggregate_version);
