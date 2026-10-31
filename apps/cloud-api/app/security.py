@@ -1,5 +1,6 @@
 import base64
 import binascii
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -57,7 +58,7 @@ def issue_access_token(
         "iat": now,
         "nbf": now,
         "exp": expires_at,
-        "jti": __import__("uuid").uuid4().hex,
+        "jti": uuid.uuid4().hex,
         "scope": " ".join(scopes),
         "store_id": store_id,
         "cred_ver": credential_version,
@@ -104,6 +105,7 @@ def current_node(
           AND n.status = 'active'
           AND c.credential_version = %s
           AND c.revoked_at IS NULL
+          AND c.valid_from <= now()
           AND (c.valid_until IS NULL OR c.valid_until > now())
         ORDER BY c.valid_from DESC
         LIMIT 1
