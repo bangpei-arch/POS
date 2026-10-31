@@ -139,7 +139,7 @@ Cloud hanya menyimpan transaksi final yang dibutuhkan konsolidasi. Semua tabel r
 | `replica.cash_deposits` | Setoran harian |
 | `replica.audit_events` | Audit asal toko, actor dan before/after data sesuai kebijakan |
 
-Tidak direplikasi: cart aktif, Hold Order, print job, cache stok, dan detail UI terminal. Status online terminal dikirim sebagai telemetry, bukan transaksi bisnis. Bukti pembayaran disimpan di object storage dengan checksum dan metadata; jangan menaruh file biner di PostgreSQL. Kebijakan apakah bukti fisik disalin ke cloud atau hanya URI terproteksi harus diputuskan sebelum DDL.
+Tidak direplikasi: cart aktif, Hold Order, print job, cache stok, dan detail UI terminal. Status online terminal dikirim sebagai telemetry, bukan transaksi bisnis. Bukti pembayaran non-tunai yang dilampirkan disalin ke object storage cloud. Database hanya menyimpan URI/key terproteksi, checksum SHA-256, ukuran, MIME type, nama file asli yang telah disanitasi, waktu unggah, dan metadata relasi pembayaran/transaksi; file biner tidak disimpan di PostgreSQL. Store server mempertahankan salinan lokal sementara sampai cloud mengonfirmasi object tersimpan dan checksum tervalidasi.
 
 Cloud tidak menjadikan data stok POS sebagai sumber stok. Stok tetap berasal dari sistem inventory otoritatif di luar POS.
 
@@ -154,6 +154,24 @@ Schema `reporting` berisi proyeksi rebuildable:
 - `sync_health_daily`: backlog, latency, availability, failure counts.
 
 Sumber kebenaran tetap tabel `replica` dan event yang telah diproses. Agregasi dapat dihitung ulang. Partisi bulanan disarankan untuk tabel fakta besar berdasarkan `business_date` (atau `received_at` untuk inbox/telemetry). Indeks utama dimulai dari store/date, product/date, cashier/date, dan payment/date. Retensi/arsip final ditetapkan bersama kebutuhan laporan dan legal hold.
+
+### 3.6 Bukti pembayaran non-tunai
+
+
+
+File bukti pembayaran yang dilampirkan disalin ke object storage cloud. PostgreSQL hanya menyimpan metadata dan referensi object terproteksi, bukan binary. Metadata minimum: payment_id/sale_id, object_key atau URI internal, checksum SHA-256, ukuran byte, MIME type, nama file asli yang disanitasi, uploaded_at, source_node_id, dan status verifikasi.
+
+
+
+Object storage wajib private-by-default; akses melalui authorization service atau signed URL berumur pendek dengan scope/permission yang sesuai. URI/key internal tidak boleh menjadi tautan publik. Enkripsi in-transit dan at-rest wajib. Akses baca/unduh dicatat di audit; bukti pembayaran tidak boleh masuk log aplikasi.
+
+
+
+Store server menyimpan salinan lokal sementara secara durable selama upload belum berhasil diverifikasi cloud. Salinan lokal baru boleh dihapus setelah cloud mengonfirmasi object tersimpan, checksum cocok, dan metadata payment terikat ke transaksi. Kegagalan upload tidak boleh menghilangkan bukti lokal atau membatalkan transaksi PAID; upload di-retry secara idempotent. Bukti bersifat opsional sesuai aturan pembayaran yang berlaku.
+
+
+
+Object key harus tidak mudah ditebak dan tidak menggunakan nama file asli sebagai identitas. Penggantian/penghapusan bukti dilakukan melalui aksi terotorisasi dan diaudit; jangan menimpa object yang sudah direferensikan transaksi tanpa jejak versi.
 
 ## 4. Aturan penerimaan dan proyeksi event
 
@@ -182,7 +200,7 @@ Untuk sale PAID, satu event membawa header + seluruh sale lines + discount/promo
 
 ## 6. Keputusan yang belum final
 
-1. Apakah cloud menyimpan bukti pembayaran sebagai salinan object storage atau hanya metadata/URI terproteksi.
+
 2. Detail implementasi grant kuota promosi: struktur DDL, tanda tangan/integritas grant, prosedur penutupan/re-alokasi, dan rekonsiliasi penggunaan.
 3. Detail implementasi cache otorisasi: format timestamp sinkronisasi NTP, ambang deteksi perubahan jam mencurigakan, dan mekanisme menjaga masa berlaku tetap aman saat reboot/server clock rollback.
 4. Retensi payload event mentah dibanding retensi fakta transaksi 5 tahun.
