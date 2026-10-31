@@ -5,7 +5,13 @@ SET search_path TO pos, public;
 
 ALTER TABLE pos_sales
     ADD COLUMN cash_session_id uuid REFERENCES cash_sessions(id) ON DELETE RESTRICT,
-    ADD COLUMN idempotency_key varchar(140);
+    ADD COLUMN idempotency_key varchar(140),
+    ADD COLUMN idempotency_hash bytea,
+    ADD CONSTRAINT ck_pos_sales_idempotency_pair CHECK (
+        (idempotency_key IS NULL AND idempotency_hash IS NULL)
+        OR
+        (idempotency_key IS NOT NULL AND octet_length(idempotency_hash) = 32)
+    );
 
 CREATE UNIQUE INDEX uq_pos_sales_store_idempotency
     ON pos_sales(store_id, idempotency_key)
@@ -30,6 +36,8 @@ COMMENT ON COLUMN pos_sales.cash_session_id IS
     'Cash session that owns this sale; required by Store API for MVP transactions.';
 COMMENT ON COLUMN pos_sales.idempotency_key IS
     'Client request key to prevent duplicate sale creation on retry.';
+COMMENT ON COLUMN pos_sales.idempotency_hash IS
+    'SHA-256 hash of canonical create-sale request; same key with different body is rejected.';
 COMMENT ON COLUMN pos_payments.cash_received_amount IS
     'Cash tendered by customer; amount remains the applied payment amount.';
 COMMENT ON COLUMN pos_payments.change_amount IS
