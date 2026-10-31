@@ -35,6 +35,7 @@ def store_api(monkeypatch):
     get_settings.cache_clear()
 
     with psycopg.connect(dsn) as conn:
+        conn.execute("SET search_path TO pos, public")
         conn.execute(
             "INSERT INTO org_stores(id,code,name,timezone,currency_code) VALUES (%s,%s,%s,'Asia/Jakarta','IDR')",
             (store_id, store_code, "Store API Test"),
@@ -89,6 +90,7 @@ def store_api(monkeypatch):
         }
 
     with psycopg.connect(dsn) as conn:
+        conn.execute("SET search_path TO pos, public")
         conn.execute("DELETE FROM sync_outbox WHERE node_id=%s", (node_id,))
         conn.execute("DELETE FROM audit_events WHERE store_id=%s", (store_id,))
         conn.execute("DELETE FROM pos_payment_events WHERE payment_id IN (SELECT id FROM pos_payments WHERE sale_id IN (SELECT id FROM pos_sales WHERE store_id=%s))", (store_id,))
