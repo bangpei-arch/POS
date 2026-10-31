@@ -2,7 +2,7 @@
 
 **Versi:** 0.1 (inventaris logis)  
 **Tanggal:** 31 Oktober 2026  
-**Status:** Draft untuk review; belum DDL  
+**Status:** Inventaris target jangka panjang; MVP DDL adalah subset terpisah  
 **Target DB:** PostgreSQL 16 minimum; versi mayor lebih baru hanya setelah uji kompatibilitas.
 
 Dokumen ini memecah kelompok entitas pada `CLOUD-DATABASE-DESIGN.md` menjadi inventaris tabel awal. Nama dan batas tabel masih dapat berubah pada tahap desain kolom/constraint. Dokumen ini tidak mengubah database operasional toko.
@@ -157,3 +157,8 @@ Reporting bukan sumber kebenaran dan harus dapat dibangun ulang dari schema `rep
 ## 7. Batas dokumen
 
 Inventaris ini adalah daftar entitas logis awal, bukan DDL atau migration. Tidak boleh digunakan untuk provisioning produksi sebelum kolom, constraint, akses, retensi, partisi, backup, dan uji kompatibilitas disetujui.
+
+
+## 8. Batas MVP
+
+MVP tidak membuat semua tabel dalam inventaris ini. Tabel aktual MVP tercantum pada database/cloud-migrations/001_mvp_cloud_schema.sql. Inventaris 71 tabel dipertahankan sebagai backlog target; implementasikan bertahap berdasarkan fitur yang benar-benar dibutuhkan setelah satu siklus penjualan sampai pusat berhasil.
