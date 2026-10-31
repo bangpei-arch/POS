@@ -57,7 +57,7 @@ Autentikasi node memakai OAuth 2.0 Client Credentials. Setiap store-server memil
 | `cloud.terminal_authorizations` | Otorisasi terminal non-primary |
 | `cloud.user_security_events` | Reset PIN, lock/unlock, deaktivasi, transfer toko |
 
-Hash PIN dan data role/permission yang diperlukan untuk autentikasi offline didistribusikan hanya ke toko terkait melalui master package terenkripsi/terproteksi. Cloud tidak mengirim seluruh data IAM ke semua toko. Cache otorisasi offline berlaku maksimal 24 jam sejak sinkronisasi otorisasi terakhir yang berhasil. Setelah 24 jam, login offline ditolak sampai store server terhubung kembali ke cloud dan berhasil menyinkronkan otorisasi terbaru. Revocation/deaktivasi diterapkan pada sinkronisasi berikutnya; saat offline perubahan tersebut belum dapat diketahui toko, tetapi batas cache 24 jam membatasi jendela stale authorization.
+Hash PIN dan data role/permission yang diperlukan untuk autentikasi offline didistribusikan hanya ke toko terkait melalui master package terenkripsi/terproteksi. Cloud tidak mengirim seluruh data IAM ke semua toko. Cache otorisasi offline berlaku maksimal 24 jam sejak sinkronisasi otorisasi terakhir yang berhasil. Waktu server toko menjadi acuan dan harus disinkronkan melalui NTP. Sistem mendeteksi perubahan jam yang mencurigakan (misalnya clock rollback atau lompatan waktu yang tidak wajar); jika integritas waktu tidak dapat dipastikan, cache dianggap kedaluwarsa dan login offline ditolak sampai waktu tervalidasi serta sinkronisasi otorisasi terbaru berhasil. Setelah 24 jam, login offline ditolak sampai store server terhubung kembali ke cloud dan berhasil menyinkronkan otorisasi terbaru. Sesi kasir yang sudah aktif boleh menyelesaikan transaksi yang sedang berjalan atau ditutup, tetapi tidak boleh memulai sesi/transaksi baru setelah cache kedaluwarsa. Revocation/deaktivasi diterapkan pada sinkronisasi berikutnya; saat offline perubahan tersebut belum dapat diketahui toko, tetapi batas cache 24 jam membatasi jendela stale authorization.
 
 ### 3.3 Master data dan konfigurasi
 
@@ -184,7 +184,7 @@ Untuk sale PAID, satu event membawa header + seluruh sale lines + discount/promo
 
 1. Apakah cloud menyimpan bukti pembayaran sebagai salinan object storage atau hanya metadata/URI terproteksi.
 2. Detail implementasi grant kuota promosi: struktur DDL, tanda tangan/integritas grant, prosedur penutupan/re-alokasi, dan rekonsiliasi penggunaan.
-3. Detail mekanisme cache otorisasi 24 jam: timestamp sinkronisasi tepercaya, penanganan clock drift/reboot, dan perilaku sesi kasir yang sudah aktif saat cache kedaluwarsa.
+3. Detail implementasi cache otorisasi: format timestamp sinkronisasi NTP, ambang deteksi perubahan jam mencurigakan, dan mekanisme menjaga masa berlaku tetap aman saat reboot/server clock rollback.
 4. Retensi payload event mentah dibanding retensi fakta transaksi 5 tahun.
 5. Target volume, ukuran payload, dan batas partisi sebelum memilih indeks/partitioning final.
 6. RPO/RTO serta lokasi backup/arsip cloud.
