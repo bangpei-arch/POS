@@ -1,8 +1,8 @@
 # Desain Database PostgreSQL POS
 **Repository:** bangpei-arch/POS  
 **Dokumen:** Desain database logis dan arsitektur penyimpanan  
-**Versi:** 0.2 (audit desain dan implementasi lokal)  
-**Tanggal:** 30 Oktober 2026  
+**Versi:** 0.3 (baseline lokal + desain recovery sinkronisasi)  
+**Tanggal:** 31 Oktober 2026  
 **Acuan:** `doc/SPECIFIKASI-FUNGSIONAL-POS.md` versi 8.0  
 **Status:** Desain database server toko telah memiliki baseline SQL dan test CI; belum dinyatakan production-ready. Desain cloud dipisahkan.
 
@@ -321,6 +321,23 @@ Ketentuan:
 - Payload event diberi schema_version agar kontrak dapat berevolusi.
 - Jangan menghapus transaksi sumber hanya karena outbox sudah terkirim.
 
+### 15.1 Recovery, lease, dan ordering (migration 004)
+
+Migration `004_sync_recovery_ordering.sql` menambahkan aturan teknis berikut pada database lokal:
+
+- Outbox mendapat `aggregate_version` monotonik per node + aggregate type + aggregate ID. Counter dialokasikan atomik pada transaksi insert.
+- Worker claim memakai `FOR UPDATE SKIP LOCKED`, default lease 120 detik (rentang fungsi 15–900 detik), dan fencing token UUID.
+- Lease kedaluwarsa dapat diambil worker lain. ACK/failure dari claim lama ditolak.
+- Event dikirim at-least-once. Penerima wajib idempotent; tidak ada asumsi exactly-once pada jaringan.
+- Claim hanya mengambil versi paling awal yang belum ACK pada aggregate yang sama. Event failed memblokir versi berikutnya sampai resolusi operasional.
+- Inbox mempunyai cursor per source node + aggregate. Hanya versi cursor + 1 yang dapat diproses. Efek bisnis penerima, cursor, dan status inbox processed wajib commit atomik.
+- Idempotency key inbox unik dalam lingkup source node: `(source_node_id, idempotency_key)`.
+- Inventory API queue tetap terpisah tetapi menggunakan lease/fencing/retry/ACK dan attempt history.
+- Exponential backoff + full jitter dihitung worker. Rekomendasi awal base 2 detik, cap 15 menit, maksimum 12 attempt; seluruhnya konfigurasi worker.
+- `sync_checkpoints` hanya watermark observabilitas sampai global stream sequence ditentukan; jangan gunakan sebagai resume cursor atau dasar skip event.
+
+Detail kontrak dan batas implementasi ada di `doc/SYNC-RECOVERY-AUDIT.md`.
+
 ## 16. Cache stok dan inventori
 
 | Tabel | Kolom inti | Keterangan |
@@ -463,7 +480,7 @@ Spesifikasi fungsional yang telah disepakati tidak dibuka ulang. Item di bawah a
 4. **Pembayaran non-tunai pending:** state transition dan otorisasi keputusan akhir perlu dituangkan dalam matriks permission dan test.
 5. **Nomor struk:** uji multi-terminal, pergantian tanggal bisnis, jam terminal salah, dan restart sequence.
 6. **Pajak/pembulatan:** test vector tarif campuran, diskon, split payment, dan pembulatan.
-7. **Sinkronisasi terminal–toko–cloud:** test integrasi saat local server/LAN mati, terminal recovery, duplicate delivery, dan cloud outage.
+7. **Sinkronisasi terminal–toko–cloud:** migration 004 dan test database menguji lease, fencing, aggregate ordering, inbox cursor, serta concurrent claim. Test integrasi HTTP terminal–toko–cloud saat LAN/local server mati, duplicate delivery setelah receiver commit, dan cloud outage tetap belum dibuat.
 8. **Hak akses:** finalisasi matriks permission per endpoint dan aksi.
 9. **Retensi/partisi:** validasi ukuran aktual dan kebutuhan laporan sebelum partisi historis diterapkan.
 
@@ -491,10 +508,12 @@ Tahapan berikutnya:
 - `database/migrations/001_initial_schema.sql`: baseline schema server toko.
 - `database/migrations/002_integrity_guards.sql`: pembayaran dan batas kumulatif refund.
 - `database/migrations/003_transaction_finality.sql`: finality penjualan/refund, rekonsiliasi settlement refund, dan indeks query tambahan.
+- `database/migrations/004_sync_recovery_ordering.sql`: aggregate version, lease/fencing, inbox cursor, retry/ACK, dan inventory queue recovery.
+- `database/tests/006_sync_recovery_ordering.sql` dan `007_sync_claim_concurrency.py`: regression ordering/recovery dan concurrent worker claim.
 - `database/tests/001_schema_smoke.sql` sampai `005_transaction_finality.sql`: smoke, audit, regression, dan finality.
 - `database/tests/004_refund_concurrency.py`: uji dua proses refund bersamaan.
 - `doc/DATABASE-BOUNDARIES-LOCAL-CLOUD.md`: batas kepemilikan data server toko dan cloud.
 
-**Status test CI:** migration 001–003, test 001–005, dan concurrency test lulus pada GitHub Actions run 41139337931. Ini membuktikan test database otomatis pada PostgreSQL 16; belum membuktikan deployment pada database lokal pengguna, integrasi API inventory, atau pemulihan terminal offline.
+**Status test CI:** migration 001–003, test 001–005, dan concurrency refund sebelumnya lulus pada GitHub Actions run 41139337931. Migration 004 dan test 006–007 lulus pada GitHub Actions run [41150146313](https://github.com/bangpei-arch/POS/actions/runs/41150146313), PostgreSQL 16. Ini belum membuktikan penerapan pada database development lokal atau integrasi HTTP end-to-end.
 
-**Status lokal pengguna:** test 001–004 pernah lulus pada database development sebelum migration 003. Migration 003 belum boleh dianggap telah diterapkan pada database lokal sampai perintah penerapan dan hasil test lokal dikonfirmasi.
+**Status lokal pengguna:** migration 003 dan test 001–005 serta refund concurrency telah dilaporkan lulus pada database development. Migration 004 belum diterapkan ke database development lokal; perlu backup baru sebelum penerapan dan menjalankan test 001–007.
