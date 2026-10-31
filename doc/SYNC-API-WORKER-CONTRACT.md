@@ -144,7 +144,7 @@ Request:
 }
 ```
 
-Payload event bisnis adalah snapshot lengkap aggregate final, bukan patch yang bergantung pada keadaan database sebelumnya. Contoh:
+Payload event bisnis adalah snapshot lengkap aggregate final, bukan patch yang bergantung pada keadaan database sebelumnya. Hanya sale yang sudah berstatus PAID yang dikirim sebagai event bisnis `sale.paid`. Status pembayaran yang belum dikonfirmasi (termasuk non-tunai pending) hanya disimpan di database lokal toko; tidak ada event `payment.pending` ke cloud. Setelah kasir mengonfirmasi pembayaran dan finalisasi lokal berhasil, store membuat `sale.paid` dan outbox secara atomik. Contoh:
 - `sale.paid`: header, semua lines, discounts/promotion snapshots, confirmed payments.
 - `refund.paid`: refund header, lines, payout breakdown, original sale reference.
 - `cash.session.closed`: session snapshot dan expected/actual/variance.
@@ -364,7 +364,7 @@ Proses merge harus atomik dan race-safe. ID canonical yang paling dahulu dibuat 
 
 
 
-File bukti pembayaran bersifat opsional sesuai aturan metode pembayaran. Jika ada, store server mengunggah file ke private object storage cloud melalui alur upload terotorisasi (misalnya request upload URL sementara dari API cloud, lalu upload langsung ke object storage). File binary tidak dikirim sebagai bagian dari event JSON dan tidak disimpan di PostgreSQL.
+File bukti pembayaran bersifat opsional sesuai aturan metode pembayaran. Bukti untuk pembayaran yang belum dikonfirmasi tetap lokal dan tidak dikirim ke cloud. Setelah transaksi menjadi PAID, store server mengunggah file ke private object storage cloud melalui alur upload terotorisasi (misalnya request upload URL sementara dari API cloud, lalu upload langsung ke object storage). File binary tidak dikirim sebagai bagian dari event JSON dan tidak disimpan di PostgreSQL.
 
 
 
@@ -384,7 +384,7 @@ Store server mempertahankan file lokal sementara secara durable sampai cloud men
 6. Detail bootstrap master snapshot dan pemulihan cursor kedaluwarsa.
 7. Apakah event audit lengkap atau subset audit yang dikirim ke cloud.
 
-9. Apakah terminal submit PAID sale hanya setelah finalisasi lokal penuh, atau juga perlu mengirim PAYMENT_PENDING sebagai event operasional.
+
 10. Kebijakan retention payload raw event, retry failed, dan dead-letter.
 
 ## 13. Batas tahap ini
