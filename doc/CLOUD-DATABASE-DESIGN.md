@@ -70,7 +70,7 @@ Cloud menjadi pemilik tabel logis:
 - `cloud.product_store_availability`
 - `cloud.product_display_order`
 - `cloud.uoms`
-- `cloud.promotions`, `cloud.promotion_conditions`, `cloud.promotion_benefits`, `cloud.promotion_products`, `cloud.promotion_quotas`
+- `cloud.promotions`, `cloud.promotion_conditions`, `cloud.promotion_benefits`, `cloud.promotion_products`, `cloud.promotion_quotas`, `cloud.promotion_quota_allocations`
 - `cloud.payment_methods`
 - `cloud.store_hours`, `cloud.store_exceptions`
 - `cloud.cash_drawer_policies` (nominal modal tetap per terminal/laci)
@@ -78,6 +78,11 @@ Cloud menjadi pemilik tabel logis:
 - `cloud.customers`, `cloud.customer_phone_aliases`, `cloud.customer_merge_events`
 
 Versi master melekat pada entitas atau record efektif. Harga dan pajak menggunakan rentang efektif yang tidak overlap untuk key bisnis yang sama. Master yang sudah dipakai transaksi tidak diubah secara historis; buat versi baru.
+**Kebijakan kuota promosi offline (diputuskan): alokasi per toko.** Cloud memegang batas kuota global dan mengalokasikan jatah secara atomik per promosi/per toko. Total seluruh alokasi aktif tidak boleh melebihi kuota global. Store server menerima grant yang memuat allocation_id, promotion_id, store_id, jumlah kuota, periode berlaku, versi, dan tanda tangan/validasi integritas. Saat offline, toko hanya boleh menggunakan sisa kuota grant miliknya; tidak boleh meminjam kuota toko lain atau melampaui grant.
+
+Penggunaan kuota dicatat lokal secara durable dan atomik dengan finalisasi sale PAID. Event sale.paid membawa promotion_id, allocation_id, dan jumlah unit kuota yang dikonsumsi; cloud merekonsiliasi penggunaan secara idempotent. Kuota yang belum digunakan tidak otomatis dipindahkan ke toko lain saat toko offline atau hanya karena heartbeat hilang. Re-alokasi hanya boleh dilakukan setelah toko mengonfirmasi grant dihentikan/ditutup dan tidak ada transaksi lokal tertunda yang dapat menggunakannya, atau setelah periode grant berakhir dan prosedur penutupan memastikan grant tidak dapat dipakai lagi. Ini mencegah kuota yang sama dipakai dua toko.
+
+Jika toko membutuhkan tambahan kuota selama masih online, cloud memeriksa sisa kuota global yang belum dialokasikan lalu menerbitkan grant tambahan secara atomik. Saat jatah grant habis, promosi tersebut tidak diterapkan di toko itu sampai grant baru diterima. Alokasi dan konsumsi harus dapat diaudit.
 
 ### 3.4 Distribusi master
 
@@ -170,7 +175,7 @@ Untuk sale PAID, satu event membawa header + seluruh sale lines + discount/promo
 ## 6. Keputusan yang belum final
 
 1. Apakah cloud menyimpan bukti pembayaran sebagai salinan object storage atau hanya metadata/URI terproteksi.
-2. Alokasi kuota promosi global per toko untuk periode offline. Kuota global strict tidak dapat dijamin bila toko offline tanpa alokasi kuota sebelumnya.
+2. Detail implementasi grant kuota promosi: struktur DDL, tanda tangan/integritas grant, prosedur penutupan/re-alokasi, dan rekonsiliasi penggunaan.
 3. Masa berlaku cache PIN/role dan perilaku pencabutan user saat toko offline.
 4. Retensi payload event mentah dibanding retensi fakta transaksi 5 tahun.
 5. Target volume, ukuran payload, dan batas partisi sebelum memilih indeks/partitioning final.
