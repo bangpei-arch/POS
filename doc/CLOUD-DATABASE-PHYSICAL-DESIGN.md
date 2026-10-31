@@ -169,7 +169,7 @@ Notasi spesifikasi per tabel:
 
 #### `cloud.promotion_quota_allocations`
 - Kolom: `id uuid`; `promotion_id uuid`; `store_id uuid`; `allocated_quantity bigint`; `consumed_quantity bigint DEFAULT 0`; `valid_from timestamptz`; `valid_until timestamptz`; `allocation_version bigint DEFAULT 1`; `grant_digest bytea`; `status varchar(20) DEFAULT 'active'`; `closed_at timestamptz?`; `created_at timestamptz`; `updated_at timestamptz`.
-- PK id. FK promotion_id → promotions; store_id → stores. UQ `(id,store_id,promotion_id)` for consumption FK. CK allocated_quantity >= 0; consumed_quantity BETWEEN 0 AND allocated_quantity; valid_until > valid_from; allocation_version > 0; status IN ('active','closed','expired','revoked'); closed_at IS NULL OR status <> 'active'.
+- PK id. FK promotion_id → promotions; store_id → stores. UQ `(id,store_id,promotion_id)` for consumption FK. CK allocated_quantity >= 0; consumed_quantity BETWEEN 0 AND allocated_quantity; valid_until > valid_from; allocation_version > 0; octet_length(grant_digest)=32; status IN ('active','closed','expired','revoked'); closed_at IS NULL OR status <> 'active'.
 - IX `(promotion_id,store_id,status)`; `(store_id,valid_until)`. Allocation totals/remaining must be updated under row lock in the same transaction; global cap is cross-row invariant enforced by service transaction/locking, not CHECK.
 
 #### `cloud.manual_discount_limits`
@@ -223,7 +223,7 @@ Notasi spesifikasi per tabel:
 
 #### `cloud.master_change_log`
 - Kolom: `change_seq bigint`; `entity_type varchar(60)`; `entity_id uuid`; `entity_version bigint`; `operation varchar(20)`; `target_store_id uuid?`; `effective_at timestamptz`; `payload_schema_version integer`; `payload jsonb`; `published_at timestamptz DEFAULT now()`.
-- PK change_seq. FK target_store_id → stores. UQ NULL-safe `(entity_type,entity_id,entity_version,target_store_id) NULLS NOT DISTINCT` (PostgreSQL 16).
+- PK change_seq. FK target_store_id → stores. UQ `UNIQUE NULLS NOT DISTINCT (entity_type,entity_id,entity_version,target_store_id)` (PostgreSQL 16 syntax).
 - CK entity_version > 0; payload_schema_version > 0; operation IN ('upsert','deactivate'); jsonb_typeof(payload)='object'.
 - IX `(target_store_id,change_seq)`; `(change_seq)`. Global stream counter row lock + log insert + master mutation must commit in one transaction.
 
@@ -326,9 +326,9 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 - IX `(sale_id)`; `(source_store_id,payment_method_code_snapshot,confirmed_at)`.
 
 #### `replica.payment_evidence`
-- Kolom: `id uuid`; `payment_id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `object_key text`; `protected_uri text`; `checksum_sha256 bytea`; `size_bytes bigint`; `mime_type varchar(100)`; `sanitized_filename varchar(255)?`; `uploaded_at timestamptz`; `verified_at timestamptz?`; `status varchar(20) DEFAULT 'pending_upload'`.
+- Kolom: `id uuid`; `payment_id uuid`; `sale_id uuid`; `source_store_id uuid`; `source_entity_id uuid`; `object_key text`; `protected_uri text`; `checksum_sha256 bytea`; `size_bytes bigint`; `mime_type varchar(100)`; `sanitized_filename varchar(255)?`; `uploaded_at timestamptz?`; `verified_at timestamptz?`; `status varchar(20) DEFAULT 'pending_upload'`.
 - PK id. FK `(payment_id,sale_id)` → payments `(id,sale_id)`; FK `(sale_id,source_store_id)` → sales `(id,source_store_id)`. UQ `(source_store_id,source_entity_id)`; UQ object_key.
-- CK octet_length(checksum_sha256)=32; size_bytes > 0; status IN ('pending_upload','verified','quarantined','deleted'); (status='verified' AND verified_at IS NOT NULL) OR (status<>'verified' AND verified_at IS NULL); verified_at IS NULL OR verified_at >= uploaded_at.
+- CK octet_length(checksum_sha256)=32; size_bytes > 0; status IN ('pending_upload','verified','quarantined','deleted'); (status='verified' AND verified_at IS NOT NULL AND uploaded_at IS NOT NULL) OR (status<>'verified' AND verified_at IS NULL); uploaded_at IS NULL OR verified_at IS NULL OR verified_at >= uploaded_at.
 - IX `(payment_id)`; `(status,uploaded_at)`. Binary object is outside PostgreSQL; no public URL.
 
 #### `replica.refunds`
