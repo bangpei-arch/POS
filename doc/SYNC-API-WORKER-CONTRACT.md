@@ -241,7 +241,15 @@ Jika kuota habis, promosi tidak diterapkan di toko tersebut sampai grant tambaha
 
 Worker master pull menerapkan grant secara idempotent berdasarkan allocation_id dan allocation_version. Grant tidak boleh ditimpa oleh versi lebih rendah. Konsumsi transaksi harus menyimpan referensi grant agar cloud dapat membandingkan allocated, consumed, dan remaining.
 
-### 6.7 Bootstrap
+### 6.5 Cache otorisasi kasir saat offline
+
+Store server menyimpan cache hash PIN dan role/permission yang diperlukan untuk login offline. Cache berlaku maksimal 24 jam sejak sinkronisasi otorisasi terakhir yang berhasil. Acuan waktu adalah jam server toko yang disinkronkan melalui NTP.
+
+Store server wajib mendeteksi perubahan jam yang mencurigakan, termasuk clock rollback dan lompatan waktu yang tidak wajar. Implementasi harus mempertahankan bukti waktu sinkronisasi secara aman terhadap reboot dan tidak boleh memperpanjang masa berlaku cache akibat perubahan jam. Jika integritas waktu tidak dapat dipastikan, cache diperlakukan kedaluwarsa dan login offline ditolak sampai waktu tervalidasi serta sinkronisasi otorisasi terbaru berhasil.
+
+Setelah cache melewati 24 jam, login offline baru dan pembukaan sesi kasir baru ditolak sampai koneksi cloud pulih dan sinkronisasi otorisasi terbaru berhasil. Sesi kasir yang sudah aktif sebelum cache kedaluwarsa tetap boleh menyelesaikan transaksi yang sedang berjalan atau ditutup; sesi tersebut tidak boleh memulai transaksi baru. Perubahan PIN, role, deaktivasi, dan pencabutan akses dari cloud diterapkan pada sinkronisasi berikutnya. Batas 24 jam membatasi jendela penggunaan cache otorisasi stale ketika toko offline.
+
+### 6.6 Bootstrap
 
 `GET /api/v1/sync/master/bootstrap`
 
