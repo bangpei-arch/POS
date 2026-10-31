@@ -1,6 +1,7 @@
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from psycopg import Connection
 
 from app.database import get_connection
@@ -22,7 +23,11 @@ async def create_token(
     if "application/x-www-form-urlencoded" not in content_type:
         raise HTTPException(status_code=415, detail="Expected form-urlencoded body")
 
-    form = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
+    try:
+        form_body = (await request.body()).decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="invalid_request_body") from None
+    form = parse_qs(form_body, keep_blank_values=True)
     if form.get("grant_type", [""])[0] != "client_credentials":
         raise HTTPException(status_code=400, detail="unsupported_grant_type")
 
@@ -63,9 +68,12 @@ async def create_token(
         credential_version=row["credential_version"],
         scopes=granted_scopes,
     )
-    return {
-        "access_token": token,
-        "token_type": "Bearer",
-        "expires_in": expires_in,
-        "scope": " ".join(granted_scopes),
-    }
+    return JSONResponse(
+        content={
+            "access_token": token,
+            "token_type": "Bearer",
+            "expires_in": expires_in,
+            "scope": " ".join(granted_scopes),
+        },
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
