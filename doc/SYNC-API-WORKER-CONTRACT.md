@@ -241,7 +241,7 @@ Jika kuota habis, promosi tidak diterapkan di toko tersebut sampai grant tambaha
 
 Worker master pull menerapkan grant secara idempotent berdasarkan allocation_id dan allocation_version. Grant tidak boleh ditimpa oleh versi lebih rendah. Konsumsi transaksi harus menyimpan referensi grant agar cloud dapat membandingkan allocated, consumed, dan remaining.
 
-### 6.5 Bootstrap
+### 6.7 Bootstrap
 
 `GET /api/v1/sync/master/bootstrap`
 
