@@ -20,7 +20,7 @@ DECLARE
   v_inbox2 uuid := gen_random_uuid();
   v_inbox_claim sync_inbox%ROWTYPE;
   v_inventory uuid := gen_random_uuid();
-  v_ok boolean;
+  v_inventory_claim sync_inventory_events%ROWTYPE;
 BEGIN
   INSERT INTO sync_nodes(node_type, node_code)
   VALUES ('central', 'SYNC004-NODE-1') RETURNING id INTO v_node;
@@ -29,9 +29,9 @@ BEGIN
 
   -- Trigger allocates monotonically increasing aggregate versions.
   INSERT INTO sync_outbox(node_id,event_id,aggregate_type,aggregate_id,event_type,payload)
-  VALUES
-    (v_node,v_event1,'sale',v_aggregate,'sale.created','{"n":1}'),
-    (v_node,v_event2,'sale',v_aggregate,'sale.paid','{"n":2}');
+  VALUES (v_node,v_event1,'sale',v_aggregate,'sale.created','{"n":1}');
+  INSERT INTO sync_outbox(node_id,event_id,aggregate_type,aggregate_id,event_type,payload)
+  VALUES (v_node,v_event2,'sale',v_aggregate,'sale.paid','{"n":2}');
   IF (SELECT aggregate_version FROM sync_outbox WHERE event_id=v_event1) <> 1
      OR (SELECT aggregate_version FROM sync_outbox WHERE event_id=v_event2) <> 2 THEN
     RAISE EXCEPTION 'Outbox aggregate versions were not allocated in order';
@@ -119,26 +119,21 @@ BEGIN
     source_type,source_id,event_type,payload,idempotency_key
   ) VALUES ('sale',gen_random_uuid(),'sale.paid','{"qty":1}', 'inv-sync-004')
   RETURNING id INTO v_inventory;
-  SELECT * INTO STRICT v_claim
-  FROM sync_outbox
-  WHERE false;
-  -- Use the inventory composite type directly.
-  DECLARE
-    v_inventory_claim sync_inventory_events%ROWTYPE;
-  BEGIN
-    SELECT * INTO v_inventory_claim
-    FROM claim_sync_inventory_events('inventory-worker',1,120);
-    IF v_inventory_claim.id <> v_inventory THEN
-      RAISE EXCEPTION 'Inventory event was not claimed';
-    END IF;
-    UPDATE sync_inventory_events SET lease_until=now()-interval '1 second'
-    WHERE id=v_inventory;
-    SELECT * INTO v_inventory_claim
-    FROM claim_sync_inventory_events('inventory-worker-2',1,120);
-    IF NOT ack_sync_inventory_event(v_inventory,v_inventory_claim.claim_token,'{"ok":true}') THEN
-      RAISE EXCEPTION 'Inventory event ACK failed after lease recovery';
-    END IF;
-  END;
+  SELECT * INTO v_inventory_claim
+  FROM claim_sync_inventory_events('inventory-worker',1,120);
+  IF v_inventory_claim.id <> v_inventory THEN
+    RAISE EXCEPTION 'Inventory event was not claimed';
+  END IF;
+  UPDATE sync_inventory_events SET lease_until=now()-interval '1 second'
+  WHERE id=v_inventory;
+  SELECT * INTO v_inventory_claim
+  FROM claim_sync_inventory_events('inventory-worker-2',1,120);
+  IF v_inventory_claim.id <> v_inventory THEN
+    RAISE EXCEPTION 'Inventory event lease was not recovered';
+  END IF;
+  IF NOT ack_sync_inventory_event(v_inventory,v_inventory_claim.claim_token,'{"ok":true}') THEN
+    RAISE EXCEPTION 'Inventory event ACK failed after lease recovery';
+  END IF;
 
   RAISE NOTICE 'SYNC RECOVERY PASS: aggregate ordering, expired lease recovery, stale ACK fencing, failed-event blocking, inbox ordering/idempotency, inventory lease';
 END;
