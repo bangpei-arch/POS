@@ -238,6 +238,12 @@ Notasi spesifikasi per tabel:
 - CK aggregate_version > 0; octet_length(payload_sha256)=32; final_status IN ('processed','rejected','dead_letter') OR NULL.
 - IX `(source_node_id,first_seen_at)`. Non-partitioned; retained as long as duplicate prevention is required, even after raw payload expiry.
 
+#### `replica.source_entity_registry`
+- Kolom: `id uuid`; `source_store_id uuid`; `entity_type varchar(40)`; `source_entity_id uuid`; `replica_table varchar(80)`; `replica_id uuid`; `business_date date?`; `registered_at timestamptz`.
+- PK id. FK source_store_id → cloud.stores. UQ `(source_store_id,entity_type,source_entity_id)`.
+- IX `(replica_table,replica_id)`; `(source_store_id,business_date)`.
+- Non-partitioned global identity registry. Menjaga identitas sumber tetap unik saat tabel fakta dipartisi; insert registry dan row fakta wajib dalam transaksi yang sama.
+
 #### `ingest.received_events`
 - Kolom: `id uuid`; `source_node_id uuid`; `source_store_id uuid`; `event_id uuid`; `idempotency_key varchar(140)`; `aggregate_type varchar(60)`; `aggregate_id uuid`; `aggregate_version bigint`; `event_type varchar(80)`; `schema_version integer`; `occurred_at timestamptz`; `correlation_id uuid?`; `payload_sha256 bytea`; `payload jsonb?`; `status varchar(20) DEFAULT 'received'`; `received_at timestamptz`; `processed_at timestamptz?`; `next_retry_at timestamptz?`; `dead_lettered_at timestamptz?`; `last_error_code varchar(60)?`; `last_error text?`.
 - PK id. FK source_node_id → sync_nodes; source_store_id → stores. Registry relation by registry.received_event_id → id (circular relation finalized after both tables exist).
@@ -396,7 +402,7 @@ Tabel reporting rebuildable. PK menggunakan kombinasi dimensi bisnis; seluruh ua
 - Kandidat partisi RANGE bulanan: `cloud.node_heartbeats` by received_at; `ingest.received_events` by received_at; `ingest.delivery_attempts` by attempted_at; `replica.sales`, refunds, cash ledger, cash sessions, deposits, audit by business/occurred date setelah volume terbukti.
 - PostgreSQL unique constraint pada partitioned table harus mencakup partition key. Karena identitas event/transaksi harus unik lintas partisi, gunakan registry non-partitioned:
   - `ingest.event_idempotency_registry` untuk source_node/event/idempotency/aggregate_version.
-  - Usulan registry fakta transaksi `replica.source_entity_registry` dengan kolom `source_store_id, entity_type, source_entity_id, replica_table, replica_id, business_date`, PK UUID, UQ `(source_store_id,entity_type,source_entity_id)`. Registry ini perlu ditambahkan sebelum partisi fakta dipakai.
+  - Registry fakta transaksi `replica.source_entity_registry` dengan kolom `source_store_id, entity_type, source_entity_id, replica_table, replica_id, business_date`, PK UUID, UQ `(source_store_id,entity_type,source_entity_id)`. Registry dibuat sejak awal dan insert-nya atomik bersama row fakta.
 - Index tambahan hanya setelah query plan/load test; hindari index JSONB/GiN generik tanpa query nyata.
 - Retensi payload raw: processed 90 hari; dead-letter sampai diselesaikan + minimal 1 tahun; fakta transaksi 5 tahun; audit 3 tahun kecuali legal hold.
 
