@@ -1,8 +1,8 @@
 # Audit Pemulihan Sinkronisasi POS
 
-**Versi:** 0.1  
+**Versi:** 0.2  
 **Tanggal:** 31 Oktober 2026  
-**Status:** Audit struktur database; belum merupakan desain final worker/API atau migration.
+**Status:** Desain recovery dan ordering difinalisasi untuk baseline database lokal; migration 004 dan regression tests sedang divalidasi CI. Belum ada worker/API runtime.
 
 ## 1. Ruang lingkup
 
@@ -59,21 +59,62 @@ Tabel inventory memiliki status, attempts, next_retry_at, dan last_error, tetapi
 9. Retry manual harus tercatat dan tidak boleh mengubah payload atau identitas event.
 10. Status `sent` berarti ACK penerima sudah dikonfirmasi, bukan sekadar HTTP request selesai dikirim.
 
-## 4. Keputusan desain yang perlu difinalisasi sebelum migration sinkronisasi
+## 4. Keputusan desain final untuk database lokal
 
-| Area | Rancangan yang disarankan | Hal yang perlu divalidasi |
-|---|---|---|
-| Aggregate ordering | Tambahkan `aggregate_version bigint` yang monotonik per aggregate; alokasikan atomik pada transaksi penulis | Definisi aggregate dan perilaku untuk event non-aggregate |
-| Outbox lease | Tambahkan `claimed_by`, `claimed_at`, `lease_until`; claim kedaluwarsa dapat diambil ulang | Durasi lease, heartbeat atau tanpa heartbeat |
-| Claim query | Ambil `pending` yang jatuh tempo dan `sending` dengan lease kedaluwarsa; gunakan `FOR UPDATE SKIP LOCKED` | Batas batch dan fairness antar aggregate |
-| Retry | Simpan attempt, next retry, error class, dan failed state; attempt history append-only | Maksimum retry otomatis dan prosedur replay |
-| Inbox ordering | Simpan aggregate identity/version; versi lompat ditahan tanpa ACK sukses | Apakah event out-of-order disimpan sebagai received/deferred |
-| Inbox idempotency | Pertahankan unique event per source; tentukan apakah idempotency key global atau scoped per source | Kontrak pembentukan idempotency key |
-| ACK | ACK memuat event_id, status hasil, dan response/correlation ID; sender hanya set sent setelah validasi | Bentuk kontrak HTTP/API |
-| Checkpoint | Simpan posisi stream yang dapat dibandingkan, dan update hanya setelah ACK | Apakah checkpoint per stream, per aggregate, atau keduanya |
-| Inventory queue | Terapkan pola lease/retry/attempt yang konsisten tetapi tetap antrean terpisah | Kontrak API inventory dan batas retry |
+### 4.1 Event identity dan aggregate ordering
 
-## 5. Rencana test sebelum worker dibuat
+- `event_id` adalah UUID stabil yang tidak berubah saat retry.
+- `aggregate` didefinisikan sebagai satu entitas bisnis yang menjadi urutan konsistensi. Contoh: satu `sale_id`, satu `refund_id`, atau satu `customer_id`.
+- Versi dialokasikan per kombinasi `node_id + aggregate_type + aggregate_id`, dimulai dari 1.
+- Counter dialokasikan atomik oleh trigger melalui upsert row counter di transaksi yang sama dengan insert outbox. Unique constraint mencegah dua event memakai versi sama.
+- Payload event dan identitas aggregate tidak boleh diubah setelah dibuat. Koreksi bisnis diterbitkan sebagai event baru.
+- Ordering tidak global antartoko atau antarseluruh aggregate. Aggregate berbeda dapat diproses paralel.
+
+### 4.2 Outbox sender: claim, lease, dan fencing
+
+- Status: `pending → sending → sent`; error permanen atau batas percobaan menghasilkan `failed`.
+- Claim memakai `FOR UPDATE SKIP LOCKED` dalam transaksi singkat. Transaksi claim harus commit sebelum HTTP request dimulai.
+- Default lease 120 detik; rentang yang diterima fungsi database 15–900 detik. Worker wajib menyelesaikan request sebelum lease berakhir atau merancang lease lebih panjang untuk request yang memang lama.
+- Setiap claim menghasilkan `claim_token` UUID baru. Token ini adalah fencing token: ACK/failure hanya diterima bila token masih sama dan lease belum kedaluwarsa.
+- Worker mati ketika `sending`: setelah `lease_until`, event dapat di-claim ulang dengan token baru.
+- Claim menaikkan `attempts`; maksimum default 12. Event yang habis percobaan saat lease kedaluwarsa berubah menjadi `failed`.
+- Claim hanya memilih event paling awal yang belum `sent` pada aggregate tersebut. Status `failed` memblokir versi sesudahnya; tidak ada skip otomatis.
+
+### 4.3 Retry dan delivery attempt
+
+- Error sementara: worker menghitung exponential backoff dengan full jitter dan memanggil fungsi failure dengan waktu retry yang akan datang.
+- Rumus dasar: `delay = random(0, min(cap, base × 2^(attempt-1)))`; parameter awal yang disarankan `base=2s`, `cap=15m`. Nilai ini konfigurasi worker, bukan hard-coded database.
+- Error permanen (misalnya payload/schema tidak valid atau 4xx non-retryable) langsung menjadi `failed`.
+- Setiap hasil attempt sukses/retry/permanent dicatat append-only pada `sync_delivery_attempts`; inventory punya tabel attempt tersendiri.
+- Retry manual harus tercatat sebagai operasi administratif dan memakai event_id/payload yang sama. Tidak boleh menghapus histori attempt atau membuat transaksi bisnis baru.
+
+### 4.4 Receiver inbox, deduplikasi, dan urutan
+
+- Deduplikasi event: unique `(source_node_id, event_id)`.
+- Idempotency key: unique `(source_node_id, idempotency_key)`, karena key tidak diasumsikan unik global lintas node.
+- Event baru harus membawa `aggregate_type`, `aggregate_id`, dan `aggregate_version`. Event tanpa versi hanya dapat ditangani melalui jalur kompatibilitas/rekonsiliasi; tidak boleh masuk worker ordered-processing.
+- Inbox cursor disimpan per `source_node_id + aggregate_type + aggregate_id`, mulai dari versi 0. Hanya versi `last_processed_version + 1` yang dapat di-claim.
+- Event versi N+1 yang tiba lebih dahulu tetap tersimpan tetapi belum diproses. Setelah N commit, N+1 menjadi eligible.
+- Inbox worker memakai lease, attempt count, dan fencing token dengan aturan yang sama seperti outbox.
+- Perubahan bisnis penerima, update cursor, dan perubahan inbox ke `processed` wajib dilakukan dalam satu transaksi database. API baru mengirim ACK setelah transaksi tersebut commit.
+- Event `rejected/failed` tidak memajukan cursor; versi sesudahnya tertahan sampai ada keputusan operasional yang diaudit.
+
+### 4.5 ACK dan checkpoint
+
+- ACK valid harus mengidentifikasi event yang sama dan dikembalikan hanya setelah commit penerima. Sender hanya menandai `sent` setelah validasi ACK.
+- ACK dari worker dengan token lama atau lease kedaluwarsa ditolak, meskipun request jaringan berhasil.
+- `sent_at/acked_at` berarti ACK penerima sudah dikonfirmasi, bukan waktu request mulai atau selesai dikirim.
+- `sync_checkpoints.last_event_id/last_acked_at` untuk saat ini hanya metadata observabilitas. Belum ada global stream sequence yang dapat membuktikan posisi kontigu; checkpoint tersebut **tidak boleh dipakai untuk melewati event** atau melanjutkan stream dengan asumsi tidak ada gap.
+- Checkpoint resume yang otoritatif baru dirancang ketika kontrak stream sequence global/per-node ditetapkan.
+
+### 4.6 Inventory queue
+
+- `sync_inventory_events` tetap antrean terpisah dari outbox transaksi.
+- Queue inventory memakai lease, fencing token, max attempts, ACK, retry, dan tabel attempt history sendiri.
+- Idempotency key inventory tetap stabil; sistem inventory penerima wajib menerapkannya sebelum memutasi stok.
+- Integrasi inventory harus menguji timeout setelah dampak stok commit tetapi sebelum ACK; retry harus menghasilkan satu dampak stok.
+
+## 5. Rencana test database sebelum worker dibuat
 
 Test database/integrasi berikut harus tersedia:
 
@@ -89,16 +130,25 @@ Test database/integrasi berikut harus tersedia:
 10. **Cross-node idempotency:** dua node dapat mengirim key yang sama bila kontrak memang mengizinkannya, tanpa benturan yang tidak disengaja.
 11. **Inventory queue:** event inventory pulih dari worker crash dan tidak mengirim dampak stok ganda.
 
-## 6. Urutan pekerjaan
+## 6. Status implementasi database
 
-1. Finalisasi kontrak aggregate/version dan idempotency key.
-2. Finalisasi model lease dan retry.
-3. Finalisasi semantik inbox, ACK, dan checkpoint.
-4. Buat migration sinkronisasi lokal terpisah (tidak mengubah migration 001–003 yang sudah diuji).
-5. Tambahkan regression tests untuk seluruh skenario bagian 5.
-6. Buat desain cloud inbox/outbox dan migration cloud terpisah.
-7. Baru implementasikan worker/API setelah kontrak dan test disetujui.
+Migration lokal `004_sync_recovery_ordering.sql` disiapkan pada branch `feature/sync-recovery-ordering`. Perubahan mencakup:
+- Aggregate version counter dan unique ordering pada outbox.
+- Claim outbox/inbox/inventory dengan `SKIP LOCKED`, lease, dan fencing token.
+- ACK/failure hanya diterima untuk claim token aktif dan lease yang belum habis.
+- Inbox cursor untuk urutan per source node dan aggregate.
+- Retry attempt history dan pemisahan idempotency key per source node.
+- Inventory queue lease recovery dan delivery attempt history.
+- Checkpoint dinyatakan sebagai watermark observabilitas, bukan cursor resume.
+
+Test baru:
+- `database/tests/006_sync_recovery_ordering.sql`: ordering, lease expiry/reclaim, stale ACK, failed-event blocking, inbox idempotency/order, inventory recovery.
+- `database/tests/007_sync_claim_concurrency.py`: dua worker tidak dapat claim event yang sama bersamaan.
+
+Workflow CI diperluas untuk menjalankan migration 004 dan kedua test tersebut setelah migration/test lama.
+
+**Batas penting:** migration dan test ini belum membuktikan HTTP API end-to-end, commit efek bisnis pada receiver, atau pemulihan worker runtime. Itu membutuhkan service/API implementation dan integration test terpisah.
 
 ## 7. Batas kesimpulan
 
-Lima test database lokal yang lulus pada 31 Oktober 2026 membuktikan schema smoke, katalog/integritas, integrity guards, refund concurrency, dan transaction finality. Test tersebut belum membuktikan pemulihan worker, ordering, atomic ACK end-to-end, atau integrasi inventory. Audit ini mencatat gap desain untuk pekerjaan berikutnya; tidak mengubah status lima test yang sudah lulus.
+Lima test database lokal yang dilaporkan lulus pada 31 Oktober 2026 membuktikan schema smoke, katalog/integritas, integrity guards, refund concurrency, dan transaction finality. Migration 004 dan test 006–007 masih harus lulus CI dan diuji pada database development lokal sebelum dapat disebut tervalidasi. Tidak ada klaim bahwa worker/API end-to-end telah dibuat atau diuji.
