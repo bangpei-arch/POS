@@ -186,7 +186,7 @@ Object key harus tidak mudah ditebak dan tidak menggunakan nama file asli sebaga
 9. Event gagal sementara dapat dicoba ulang; kegagalan permanen ditahan untuk perbaikan. Jangan menghapus payload gagal.
 10. Replay mempertahankan event_id dan payload asli; skip hanya boleh dilakukan oleh role berwenang dengan alasan dan audit.
 
-Untuk sale PAID, satu event membawa header + seluruh sale lines + discount/promotion snapshot + confirmed payments yang diperlukan untuk merekonstruksi transaksi. Refund PAID membawa header + refund lines + payout. Ini menghindari ketergantungan pada urutan insert row yang tidak relevan di cloud.
+Hanya transaksi sale berstatus PAID yang direplikasi sebagai fakta bisnis melalui event `sale.paid`. Status pembayaran yang belum dikonfirmasi, termasuk pembayaran non-tunai pending, tetap berada di database operasional toko dan tidak dikirim sebagai event bisnis ke cloud. Setelah kasir mengonfirmasi pembayaran dan transaksi difinalisasi menjadi PAID, store membuat event `sale.paid` secara atomik bersama finalisasi lokal. Event membawa header + seluruh sale lines + discount/promotion snapshot + confirmed payments yang diperlukan untuk merekonstruksi transaksi. Refund PAID membawa header + refund lines + payout. Ini menghindari ketergantungan pada urutan insert row yang tidak relevan di cloud.
 
 ## 5. Partitioning, indeks, dan retensi
 
