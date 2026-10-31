@@ -92,6 +92,7 @@ Auto-merge pelanggan memakai nomor telepon aktif yang dinormalisasi ke E.164. ID
 | `ingest.aggregate_cursors` | Versi terakhir yang diproses per source node dan aggregate |
 | `ingest.delivery_attempts` | Riwayat penerimaan, retry, dan hasil per event |
 | `ingest.replay_actions` | Audit replay, skip, atau penutupan dead-letter |
+| `ingest.retention_actions` | Audit job purge raw payload/dead-letter/metadata |
 | `ingest.node_sync_status` | Ringkasan backlog, keberhasilan terakhir, dan error per node/stream |
 
 Catatan desain:
@@ -119,6 +120,7 @@ Catatan desain:
 | `replica.cash_handover_events` | Serah terima kasir |
 | `replica.cash_deposits` | Setoran kas |
 | `replica.audit_events` | Audit event yang dikirim dari toko |
+| `replica.source_entity_registry` | Registry identitas sumber non-partitioned untuk unique lintas partisi |
 
 `replica.payment_evidence`* adalah usulan eksplisit untuk memisahkan metadata bukti pembayaran dari row pembayaran. Diputuskan menggunakan tabel terpisah agar siklus hidup bukti, verifikasi checksum, akses object storage, dan audit dapat dikelola independen dari pembayaran. File binary disimpan di private object storage, bukan PostgreSQL.
 
