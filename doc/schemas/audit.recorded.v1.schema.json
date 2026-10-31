@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pos.example.invalid/schemas/audit.recorded.v1.schema.json",
+  "title": "POS audit.recorded payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "audit_id",
+    "action",
+    "entity_type",
+    "occurred_at"
+  ],
+  "properties": {
+    "audit_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actor_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "terminal_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "action": {
+      "enum": [
+        "auth.login_failed",
+        "cash_session.opened",
+        "cash_session.closed",
+        "sale.payment_confirmed",
+        "sale.paid",
+        "receipt.reprinted",
+        "sync.delivery_failed"
+      ]
+    },
+    "entity_type": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "entity_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 500
+    },
+    "correlation_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
