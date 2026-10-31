@@ -89,30 +89,11 @@ def store_api(monkeypatch):
             "product_id": product_id, "employee_code": employee_code, "sku": sku,
         }
 
-    with psycopg.connect(dsn) as conn:
-        conn.execute("SET search_path TO pos, public")
-        conn.execute("DELETE FROM sync_outbox WHERE node_id=%s", (node_id,))
-        conn.execute("DELETE FROM audit_events WHERE store_id=%s", (store_id,))
-        conn.execute("DELETE FROM pos_payment_events WHERE payment_id IN (SELECT id FROM pos_payments WHERE sale_id IN (SELECT id FROM pos_sales WHERE store_id=%s))", (store_id,))
-        conn.execute("DELETE FROM pos_sale_status_events WHERE sale_id IN (SELECT id FROM pos_sales WHERE store_id=%s)", (store_id,))
-        conn.execute("DELETE FROM pos_payments WHERE sale_id IN (SELECT id FROM pos_sales WHERE store_id=%s)", (store_id,))
-        conn.execute("DELETE FROM pos_sale_lines WHERE sale_id IN (SELECT id FROM pos_sales WHERE store_id=%s)", (store_id,))
-        conn.execute("DELETE FROM pos_sales WHERE store_id=%s", (store_id,))
-        conn.execute("DELETE FROM pos_sale_number_sequences WHERE terminal_id=%s", (terminal_id,))
-        conn.execute("DELETE FROM cash_session_events WHERE session_id IN (SELECT id FROM cash_sessions WHERE store_id=%s)", (store_id,))
-        conn.execute("DELETE FROM cash_sessions WHERE store_id=%s", (store_id,))
-        conn.execute("DELETE FROM cash_drawers WHERE id=%s", (drawer_id,))
-        conn.execute("DELETE FROM iam_user_role_assignments WHERE user_id=%s", (user_id,))
-        conn.execute("DELETE FROM iam_user_store_assignments WHERE user_id=%s", (user_id,))
-        conn.execute("DELETE FROM org_terminals WHERE id=%s", (terminal_id,))
-        conn.execute("DELETE FROM iam_users WHERE id=%s", (user_id,))
-        conn.execute("DELETE FROM org_store_servers WHERE server_code=(SELECT node_code FROM sync_nodes WHERE id=%s)", (node_id,))
-        conn.execute("DELETE FROM sync_nodes WHERE id=%s", (node_id,))
-        conn.execute("DELETE FROM md_product_store_availability WHERE product_id=%s", (product_id,))
-        conn.execute("DELETE FROM md_product_prices WHERE product_id=%s", (product_id,))
-        conn.execute("DELETE FROM md_products WHERE id=%s", (product_id,))
-        conn.execute("DELETE FROM org_stores WHERE id=%s", (store_id,))
+    # Paid sales and their financial children are immutable by design.
+    # This test intentionally leaves its uniquely identified fixture rows in
+    # the disposable CI/test database. Never point this test at production.
     get_settings.cache_clear()
+
 
 
 def test_one_paid_sale_and_idempotent_retry(store_api):
@@ -176,6 +157,7 @@ def test_one_paid_sale_and_idempotent_retry(store_api):
     assert closed.json()["variance_amount"] == "0.00"
 
     with psycopg.connect(ctx["dsn"]) as conn:
+        conn.execute("SET search_path TO pos, public")
         sale_row = conn.execute(
             "SELECT status, cash_session_id, grand_total FROM pos_sales WHERE id=%s",
             (uuid.UUID(data["sale_id"]),),
