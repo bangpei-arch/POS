@@ -58,7 +58,7 @@ Setiap node dapat memiliki dua secret aktif selama periode rotasi terbatas. Cent
 
 ## 4. Terminal ke Store API
 
-### 3.1 Submit transaksi terminal
+### 4.1 Submit transaksi terminal
 
 `POST /api/v1/terminals/{terminal_id}/sales`
 
@@ -102,7 +102,7 @@ Ketentuan:
 - Terminal baru menghapus/menandai item IndexedDB selesai setelah menerima durable ACK store.
 - Jika response hilang, terminal mengirim ulang dengan sale_id/idempotency yang sama.
 
-### 3.2 Terminal status/heartbeat
+### 4.2 Terminal status/heartbeat
 
 `POST /api/v1/terminals/{terminal_id}/heartbeat`
 
@@ -110,7 +110,7 @@ Mencatat app_version, observed_at, connectivity state, local queue count, dan st
 
 ## 5. Store Sender ke Cloud Receiver
 
-### 4.1 Kirim batch event
+### 5.1 Kirim batch event
 
 `POST /api/v1/sync/events:batch`
 
@@ -170,7 +170,7 @@ Respons per event (batch dapat berisi hasil campuran):
 
 Status hasil: `processed`, `already_processed`, `deferred`, `rejected`, `conflict`.
 
-### 4.2 Semantik ACK
+### 5.2 Semantik ACK
 
 - Final ACK hanya berarti fakta bisnis telah berhasil diproyeksikan di cloud dan inbox cursor + status processed commit atomik.
 - Untuk request batch yang valid, HTTP 200 mengembalikan hasil per event. `processed` atau `already_processed` adalah final ACK untuk event tersebut; sender memanggil `ack_sync_outbox(outbox_id,claim_token,...)`.
@@ -180,7 +180,7 @@ Status hasil: `processed`, `already_processed`, `deferred`, `rejected`, `conflic
 - Jika response hilang setelah cloud commit, retry event yang sama harus mengembalikan `already_processed` dengan hasil ACK yang sama.
 - Tidak ada ACK final hanya karena payload diterima ke buffer/proxy atau masuk inbox.
 
-### 4.3 Idempotency dan urutan
+### 5.3 Idempotency dan urutan
 
 Unique constraints cloud:
 - `(source_node_id,event_id)`
@@ -191,7 +191,7 @@ Jika event_id/key sama dan payload hash sama, return status existing. Jika hash 
 
 ## 6. Master data Cloud ke Store
 
-### 5.1 Pull perubahan
+### 6.1 Pull perubahan
 
 `GET /api/v1/sync/master/changes?after={cursor}&limit=200`
 
@@ -222,7 +222,7 @@ Ketentuan:
 - Versi entity lebih rendah dari versi lokal diabaikan sebagai duplicate; versi lompat harus ditahan/dilaporkan.
 - Jika cursor terlalu lama dan log telah diarsipkan, cloud menyediakan bootstrap snapshot + cursor baru.
 
-### 5.2 Konfirmasi cursor
+### 6.2 Konfirmasi cursor
 
 `POST /api/v1/sync/master/ack`
 
@@ -241,7 +241,7 @@ Jika kuota habis, promosi tidak diterapkan di toko tersebut sampai grant tambaha
 
 Worker master pull menerapkan grant secara idempotent berdasarkan allocation_id dan allocation_version. Grant tidak boleh ditimpa oleh versi lebih rendah. Konsumsi transaksi harus menyimpan referensi grant agar cloud dapat membandingkan allocated, consumed, dan remaining.
 
-### 5.3 Bootstrap
+### 6.5 Bootstrap
 
 `GET /api/v1/sync/master/bootstrap`
 
@@ -279,7 +279,7 @@ Retry exponential backoff dengan full jitter; baseline base 2 detik, cap 15 meni
 
 ## 9. Worker behavior
 
-### 8.1 Store Sender Worker
+### 9.1 Store Sender Worker
 
 1. Claim batch melalui `claim_sync_outbox(worker_id, limit, lease_seconds)`.
 2. Urutkan event per aggregate_version; migration 004 mencegah claim versi berikut sebelum versi sebelumnya sent.
@@ -293,7 +293,7 @@ Retry exponential backoff dengan full jitter; baseline base 2 detik, cap 15 meni
 6. Jangan menghapus outbox event atau mengubah payload setelah event dibuat.
 7. Worker harus memiliki concurrency terbatas, timeout HTTP, dan shutdown graceful.
 
-### 8.2 Cloud Inbox Worker
+### 9.2 Cloud Inbox Worker
 
 1. Claim dengan `claim_sync_inbox` (lease + fencing token).
 2. Validasi schema_version, node/store ownership, aggregate sequence, business invariants, dan referensi master.
@@ -304,7 +304,7 @@ Retry exponential backoff dengan full jitter; baseline base 2 detik, cap 15 meni
 7. Event dengan predecessor gap berstatus deferred dan tidak boleh melewati cursor.
 8. Replay/skip harus melalui action audit dan role khusus.
 
-### 8.3 Store Master Pull Worker
+### 9.3 Store Master Pull Worker
 
 1. Baca cursor lokal terakhir.
 2. Pull satu batch change log.
@@ -314,7 +314,7 @@ Retry exponential backoff dengan full jitter; baseline base 2 detik, cap 15 meni
 6. Kirim master ACK ke cloud setelah commit lokal.
 7. Retry tanpa menghapus cursor bila batch gagal.
 
-### 8.4 Reporting Worker
+### 9.4 Reporting Worker
 
 Update agregasi dari fakta `replica` setelah transaksi projection commit. Gunakan watermark/queue internal dan operasi idempotent. Laporan dapat tertunda tanpa memengaruhi final ACK transaksi; laporan bukan bagian dari transaksi ACK.
 
