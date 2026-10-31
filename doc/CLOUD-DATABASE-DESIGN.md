@@ -75,7 +75,15 @@ Cloud menjadi pemilik tabel logis:
 - `cloud.store_hours`, `cloud.store_exceptions`
 - `cloud.cash_drawer_policies` (nominal modal tetap per terminal/laci)
 - `cloud.receipt_policies` (batas cetak ulang dan konfigurasi struk)
-- `cloud.customers`, `cloud.customer_phone_aliases`, `cloud.customer_merge_events`
+- `cloud.customers`, `cloud.customer_phone_aliases`, `cloud.customer_merge_events`. Nomor telepon dinormalisasi ke format E.164 sebelum pencocokan dan diberi unique constraint pada identitas nomor aktif.
+
+**Kebijakan konflik pelanggan (diputuskan): auto-merge berdasarkan nomor telepon yang sama.** Saat pelanggan baru/perubahan pelanggan masuk dari toko, cloud menormalisasi nomor telepon lalu mencari nomor aktif yang sama. Jika cocok, cloud langsung menggabungkan record ke satu customer canonical; tidak menunggu verifikasi manual. Proses harus race-safe (unique constraint/transaction) agar dua event bersamaan tidak membuat duplikat.
+
+Aturan konservasi data untuk auto-merge:
+- Record pelanggan canonical yang lebih dahulu dibuat tetap menjadi ID utama; ID toko/record lain dicatat sebagai alias dan merge event.
+- Field canonical yang kosong boleh diisi dari record yang digabung. Field yang sama-sama terisi tetapi berbeda tidak boleh saling menimpa otomatis; simpan perbedaan sebagai conflict metadata/merge audit untuk koreksi admin bila diperlukan.
+- Riwayat transaksi lama tidak diubah atau dihapus. Relasi pelanggan asal tetap tersimpan; laporan/lookup pelanggan menggunakan pemetaan canonical/alias.
+- Nomor telepon yang kosong atau tidak valid tidak menjadi dasar auto-merge. Normalisasi harus konsisten (kode negara Indonesia +62 untuk nomor Indonesia).
 
 Versi master melekat pada entitas atau record efektif. Harga dan pajak menggunakan rentang efektif yang tidak overlap untuk key bisnis yang sama. Master yang sudah dipakai transaksi tidak diubah secara historis; buat versi baru.
 **Kebijakan kuota promosi offline (diputuskan): alokasi per toko.** Cloud memegang batas kuota global dan mengalokasikan jatah secara atomik per promosi/per toko. Total seluruh alokasi aktif tidak boleh melebihi kuota global. Store server menerima grant yang memuat allocation_id, promotion_id, store_id, jumlah kuota, periode berlaku, versi, dan tanda tangan/validasi integritas. Saat offline, toko hanya boleh menggunakan sisa kuota grant miliknya; tidak boleh meminjam kuota toko lain atau melampaui grant.
