@@ -352,7 +352,7 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.cash_sessions`
 - Kolom: `id uuid`; kolom asal di atas; `source_drawer_id uuid`; `source_terminal_id uuid`; `source_cashier_id uuid`; `opening_counted numeric(18,2)`; `closing_counted numeric(18,2)`; `expected_cash numeric(18,2)`; `variance_amount numeric(18,2)`; `opened_at timestamptz`; `closed_at timestamptz`; `currency_code char(3)`.
-- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(source_node_id,source_store_id)` → sync_nodes `(id,store_id)`. UQ `(source_store_id,source_entity_id)`.
 - CK all cash amounts >= 0 except variance may be negative; closed_at >= opened_at.
 - IX `(source_store_id,closed_at DESC)`; `(source_store_id,source_cashier_id,closed_at DESC)`.
 
@@ -364,19 +364,19 @@ Semua tabel fakta transaksi memiliki `source_store_id uuid NOT NULL`, `source_no
 
 #### `replica.cash_handover_events`
 - Kolom: `id uuid`; kolom asal di atas; `source_drawer_id uuid`; `source_from_session_id uuid`; `source_to_session_id uuid`; `from_cashier_source_id uuid`; `to_cashier_source_id uuid`; `amount numeric(18,2)`; `variance numeric(18,2)`; `supervisor_source_user_id uuid?`; `reason text?`; `confirmed_at timestamptz`.
-- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(source_node_id,source_store_id)` → sync_nodes `(id,store_id)`. UQ `(source_store_id,source_entity_id)`.
 - CK amount >= 0; source_from_session_id <> source_to_session_id.
 - IX `(source_store_id,confirmed_at DESC)`.
 
 #### `replica.cash_deposits`
 - Kolom: `id uuid`; kolom asal di atas; `source_drawer_id uuid`; `amount numeric(18,2)`; `expected_amount numeric(18,2)`; `variance numeric(18,2)`; `recorded_by_source_user_id uuid`; `reason text`; `deposited_at timestamptz`; `status varchar(20)`.
-- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(source_node_id,source_store_id)` → sync_nodes `(id,store_id)`. UQ `(source_store_id,source_entity_id)`.
 - CK amount >= 0; expected_amount >= 0; status='recorded'; length(trim(reason)) > 0.
 - IX `(source_store_id,deposited_at DESC)`.
 
 #### `replica.audit_events`
 - Kolom: `id uuid`; `source_store_id uuid`; `source_node_id uuid`; `source_entity_id uuid`; `source_terminal_id uuid?`; `actor_source_user_id uuid?`; `action varchar(100)`; `entity_type varchar(80)`; `entity_id uuid?`; `reason text?`; `before_data jsonb?`; `after_data jsonb?`; `correlation_id uuid?`; `occurred_at timestamptz`; `received_at timestamptz`.
-- PK id. FK source_store_id → stores; source_node_id → sync_nodes. UQ `(source_store_id,source_entity_id)`.
+- PK id. FK `(source_node_id,source_store_id)` → sync_nodes `(id,store_id)`. UQ `(source_store_id,source_entity_id)`.
 - CK action <> ''; entity_type <> ''.
 - IX `(source_store_id,occurred_at DESC)`; `(actor_source_user_id,occurred_at DESC)`; BRIN received_at. Restrict PII/secrets in before/after payload.
 
