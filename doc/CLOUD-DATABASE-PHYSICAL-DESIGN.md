@@ -434,7 +434,7 @@ Berikut bukan CHECK biasa karena melibatkan banyak row/tabel:
 1. Apakah satu store-server aktif per store wajib mutlak atau perlu overlap saat pergantian server; partial unique saat ini sengaja bersifat opsi.
 2. Penempatan PIN hash dan proses distribusi credential offline (jangan menyimpan PIN plaintext).
 3. Apakah event audit yang direplikasi semua atau subset yang diizinkan.
-4. Apakah table `replica.source_entity_registry` diaktifkan sejak awal atau hanya saat partisi mulai dipakai; rekomendasi: buat sejak awal.
+4. Registry `replica.source_entity_registry` dibuat sejak awal untuk menjaga unique source identity, walaupun partisi fakta belum diaktifkan.
 5. Apakah extension `btree_gist` disetujui untuk exclusion constraint rentang harga/pajak; jika tidak, gunakan serialized validation di service.
 6. Retensi metadata idempotency setelah payload raw dihapus harus cukup lama untuk menolak duplicate lama; usulan metadata registry dipertahankan minimal sepanjang umur fakta transaksi + 1 tahun atau sesuai legal hold.
 7. Final index/partition harus didasarkan pada query API dan load test; rancangan ini belum mengklaim kapasitas produksi.
